@@ -13,7 +13,7 @@ only medians; that file is kept untouched as the reference implementation.
 | `dsmem_remote` | another block's shared memory at `--distance` ranks (DSMEM) |
 | `l2` | global memory resident in L2 |
 | `dram` | global memory not in any cache |
-| `chain` | the same chase at any buffer size (`--buffer-kib`), for the latency-vs-working-set curve; `--carveout` moves the L1 step |
+| `chain` | the same chase at any buffer size (`--buffer-kib`), for the latency-vs-working-set curve |
 | `latency-many-threads` | DSMEM **under load**: `--requesters` blocks × `--chasers` threads all chasing rank 0's buffer; one row per warp; `--target local` is the own-SRAM control |
 
 All shared code (chase kernel, Sattolo cycle, CLI parsing, CSV output) is in
@@ -107,15 +107,14 @@ each `stdout.log` with `pandas.read_csv(..., comment='#')`, concatenates, and
 prints median / mean / std / p95 of `cycles_per_load`.
 
 ```sh
-sbatchman launch -f experiments.yaml -t 'chain*'   # 1 KiB .. 2 GiB, two carveouts
+sbatchman launch -f experiments.yaml -t 'chain*'   # 1 KiB .. 2 GiB
 python plot_chain.py                                # -> chain_latency.png / .pdf
 ```
 
 `plot_chain.py` draws latency against chain data volume on a log axis, the
 figure of Luo et al. ("Dissecting the NVIDIA Hopper Architecture", Fig. 2)
 for this machine: flat while the buffer fits a cache level, a step where it
-outgrows one. The carveout comes from the job's SbatchMan variables, not the
-CSV, so the schema is unchanged.
+outgrows one.
 
 ```sh
 sbatchman launch -f experiments.yaml -t 'loaded*'  # requesters x chasers, plus controls

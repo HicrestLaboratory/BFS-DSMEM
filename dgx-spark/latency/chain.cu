@@ -7,13 +7,13 @@
 // cache sizes, measured rather than quoted. (Luo et al., "Dissecting the
 // NVIDIA Hopper Architecture", Fig. 2, does this for A100 / H800 / RTX 4090.)
 //
-// --carveout sets the kernel's preferred L1/shared split (0 = maximise L1,
-// 100 = maximise shared memory, -1 = leave the driver's default). L1 and
-// shared memory are the same 128 KiB SRAM, so this moves the first step.
+// The kernel uses no shared memory, so it runs with the driver's default
+// L1/shared-memory split, which for such a kernel is the maximum L1 (the
+// first step of the curve lands at ~88 KiB; see the carveout chapter of the
+// book for what happens when a kernel also allocates shared memory).
 //
 // Build: make chain
-// Run:   ./chain --buffer-kib 64 [--carveout -1] [--reps 101] [--steps 16384]
-//               [--seed 42] [--warmup 1]
+// Run:   ./chain --buffer-kib 64 [--reps 101] [--steps 16384] [--seed 42] [--warmup 1]
 
 #include "common.cuh"
 
@@ -36,9 +36,7 @@ int main(int argc, char** argv) {
     Args a;
     parse_args(argc, argv, &a, "chain",
                "  --buffer-kib N    chase buffer size in KiB             (default 64)\n"
-               "  --buffer-bytes N  ... or in bytes\n"
-               "  --carveout N      preferred L1/shared split, -1 = driver default,\n"
-               "                    0 = max L1, 100 = max shared memory (default -1)\n");
+               "  --buffer-bytes N  ... or in bytes\n");
     if (a.buffer_bytes == 0) a.buffer_bytes = 64 * 1024;
     size_t n = a.buffer_bytes / sizeof(unsigned);
     print_header(argc, argv, a, n);
@@ -60,12 +58,6 @@ int main(int argc, char** argv) {
     CUDA_CHECK(cudaMalloc(&dsink, sizeof(unsigned long long)));
     Result* out;
     CUDA_CHECK(cudaMallocManaged(&out, sizeof(Result)));
-
-    // The carveout is a per-kernel attribute; set it before the first launch.
-    if (a.carveout >= 0)
-        CUDA_CHECK(cudaFuncSetAttribute(
-            (const void*)gmem_chase,
-            cudaFuncAttributePreferredSharedMemoryCarveout, a.carveout));
 
     // Lazy module loading flushes L2 on a kernel's first launch (see l2.cu):
     // launch once, untimed, before warming.

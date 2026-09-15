@@ -149,7 +149,6 @@ struct Args {
     int mapped = 1;         // 1 = go through map_shared_rank, 0 = direct pointer
     size_t buffer_bytes = 0;  // 0 = "use the program's default"
     int stride_bytes = 0;   // 0 = random (Sattolo); > 0 = fixed stride in bytes
-    int carveout = -1;      // preferred L1/shared split, -1 = driver default (chain.cu)
     // latency-many-threads.cu only:
     int chasers = 1;        // chasing threads per requester block
     int requesters = 1;     // requester blocks (cluster size = requesters + 1)
@@ -191,7 +190,6 @@ void parse_args(int argc, char** argv, Args* a, const char* prog,
         else if (strcmp(f, "--mapped") == 0)        a->mapped = atoi(v);
         else if (strcmp(f, "--buffer-bytes") == 0)  a->buffer_bytes = strtoull(v, nullptr, 10);
         else if (strcmp(f, "--buffer-kib") == 0)    a->buffer_bytes = strtoull(v, nullptr, 10) * 1024;
-        else if (strcmp(f, "--carveout") == 0)      a->carveout = atoi(v);
         else if (strcmp(f, "--chasers") == 0)       a->chasers = atoi(v);
         else if (strcmp(f, "--requesters") == 0)    a->requesters = atoi(v);
         else if (strcmp(f, "--bank-aligned") == 0)  a->bank_aligned = atoi(v);

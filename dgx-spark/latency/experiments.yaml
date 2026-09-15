@@ -78,17 +78,16 @@ jobs:
         command: "./dram --stride {stride} --reps {reps} --steps {steps}"
 
   # Latency vs. chain data volume (Luo et al. Fig. 2): the same chase at many
-  # buffer sizes, 1 KiB to 2 GiB, at two L1/shared carveouts. The steps in the
-  # curve are the cache sizes. Plot with: python plot_chain.py
+  # buffer sizes, 1 KiB to 2 GiB. The steps in the curve are the cache sizes.
+  # Plot with: python plot_chain.py
   - config: local
     variables:
       reps: [21]
       buffer_kib: [1, 2, 4, 8, 12, 16, 20, 24, 32, 48, 64, 80, 96, 112, 128, 192, 256, 384, 512, 768,
                    1024, 1536, 2048, 3072, 4096, 6144, 8192, 12288, 16384, 20480, 24576, 28672, 32768,
                    49152, 65536, 98304, 131072, 262144, 524288, 1048576, 2097152]
-      carveout: [-1, 0]
-    tag: "chain_c{carveout}_k{buffer_kib}"
-    command: "./chain --buffer-kib {buffer_kib} --carveout {carveout} --reps {reps} --steps {steps}"
+    tag: "chain_k{buffer_kib}"
+    command: "./chain --buffer-kib {buffer_kib} --reps {reps} --steps {steps}"
 
   # Latency UNDER LOAD (supervisor's note 2): R requester blocks x N chasing
   # threads, all against rank 0's shared memory. Every warp is a row.

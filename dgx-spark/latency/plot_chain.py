@@ -6,8 +6,8 @@ Run from the latency/ directory after `sbatchman launch -f experiments.yaml -t '
     python plot_chain.py                 # writes chain_latency.png and .pdf
     python plot_chain.py --out fig.png   # custom output name (extension picks the format)
 
-Only the default-carveout runs are plotted. The flat stretches are cache
-levels; the steps between them are the cache sizes, measured.
+The flat stretches are cache levels; the steps between them are the cache
+sizes, measured.
 """
 
 import argparse
@@ -36,8 +36,6 @@ def load_runs() -> pd.DataFrame:
             print(f"skipping {job.tag}: status={job.status}", file=sys.stderr)
             continue
         df = pd.read_csv(log, comment="#")
-        # the carveout is not a CSV column; SbatchMan kept the job's variables
-        df["carveout"] = int((job.variables or {}).get("carveout", -1))
         frames.append(df)
     if not frames:
         sys.exit("no completed chain jobs")
@@ -50,9 +48,6 @@ def main():
     args = ap.parse_args()
 
     runs = load_runs()
-    runs = runs[runs["carveout"] == -1]
-    if runs.empty:
-        sys.exit("no default-carveout chain jobs")
     runs["kib"] = runs["buffer_bytes"] / 1024
     med = (runs.groupby("kib")["cycles_per_load"]
                .median().reset_index().sort_values("kib"))
