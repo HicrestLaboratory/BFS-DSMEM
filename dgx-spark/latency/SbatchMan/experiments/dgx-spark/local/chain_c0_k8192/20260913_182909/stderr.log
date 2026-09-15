@@ -1,0 +1,3 @@
+chain summary (per load):
+  cycles          n=21  min=340.50  p25=340.70  median=340.78  mean=340.79  sd=0.15  p95=341.02  max=341.08
+  ns              n=21  min=141.20  p25=141.28  median=141.32  mean=141.32  sd=0.06  p95=141.42  max=141.44

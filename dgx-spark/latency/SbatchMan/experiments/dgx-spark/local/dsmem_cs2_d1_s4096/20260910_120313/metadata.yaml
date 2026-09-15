@@ -1,0 +1,20 @@
+archive_name: null
+cluster_name: dgx-spark
+command: ./dsmem_remote --cluster-size 2 --distance 1 --stride 4096 --reps 101 --steps
+  16384
+config_name: local
+end_timestamp: '20260910_120313.808431426'
+exitcode: null
+exp_dir: dgx-spark/local/dsmem_cs2_d1_s4096/20260910_120313
+job_id: 1520222
+postprocess: null
+preprocess: null
+queued_timestamp: '20260910_120313.104712'
+scheduler: local
+start_timestamp: '20260910_120313.108284274'
+status: COMPLETED
+tag: dsmem_cs2_d1_s4096
+variables:
+  reps: 101
+  steps: 16384
+  stride: 4096

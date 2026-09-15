@@ -1,0 +1,3 @@
+smem_local summary (per load):
+  cycles          n=101  min=32.94  p25=32.94  median=32.94  mean=32.94  sd=0.00  p95=32.94  max=32.94
+  ns              n=101  min=13.70  p25=13.70  median=13.70  mean=13.70  sd=0.00  p95=13.70  max=13.70

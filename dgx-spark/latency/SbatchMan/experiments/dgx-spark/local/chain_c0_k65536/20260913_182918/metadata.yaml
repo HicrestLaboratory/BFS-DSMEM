@@ -1,0 +1,20 @@
+archive_name: null
+cluster_name: dgx-spark
+command: ./chain --buffer-kib 65536 --carveout 0 --reps 21 --steps 16384
+config_name: local
+end_timestamp: '20260913_182919.741707561'
+exitcode: null
+exp_dir: dgx-spark/local/chain_c0_k65536/20260913_182918
+job_id: 1581262
+postprocess: null
+preprocess: null
+queued_timestamp: '20260913_182918.945006'
+scheduler: local
+start_timestamp: '20260913_182918.948166503'
+status: COMPLETED
+tag: chain_c0_k65536
+variables:
+  buffer_kib: 65536
+  carveout: 0
+  reps: 21
+  steps: 16384

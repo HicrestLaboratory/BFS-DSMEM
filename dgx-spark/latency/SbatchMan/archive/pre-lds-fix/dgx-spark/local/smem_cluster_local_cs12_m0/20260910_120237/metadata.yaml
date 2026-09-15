@@ -1,0 +1,20 @@
+archive_name: pre-lds-fix
+cluster_name: dgx-spark
+command: ./smem_cluster_local --cluster-size 12 --mapped 0 --reps 101 --steps 16384
+config_name: local
+end_timestamp: '20260910_120237.993137524'
+exitcode: null
+exp_dir: dgx-spark/local/smem_cluster_local_cs12_m0/20260910_120237
+job_id: 1519327
+postprocess: null
+preprocess: null
+queued_timestamp: '20260910_120237.553487'
+scheduler: local
+start_timestamp: '20260910_120237.556061114'
+status: COMPLETED
+tag: smem_cluster_local_cs12_m0
+variables:
+  cluster_size: 12
+  mapped: 0
+  reps: 101
+  steps: 16384

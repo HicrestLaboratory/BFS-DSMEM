@@ -1,0 +1,23 @@
+archive_name: null
+cluster_name: dgx-spark
+command: ./latency-many-threads --target remote --requesters 1 --chasers 256 --bank-aligned
+  0 --reps 11 --steps 16384
+config_name: local
+end_timestamp: '20260914_082125.226367761'
+exitcode: null
+exp_dir: dgx-spark/local/loaded_remote_r1_c256_banksrandom/20260914_082124
+job_id: 1598725
+postprocess: null
+preprocess: null
+queued_timestamp: '20260914_082124.315453'
+scheduler: local
+start_timestamp: '20260914_082124.317955174'
+status: COMPLETED
+tag: loaded_remote_r1_c256_banksrandom
+variables:
+  bank_aligned: 0
+  chasers: 256
+  reps: 11
+  requesters: 1
+  steps: 16384
+  target: remote

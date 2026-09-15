@@ -1,0 +1,18 @@
+archive_name: null
+cluster_name: dgx-spark
+command: ./l2 --reps 101 --steps 16384
+config_name: local
+end_timestamp: '20260910_120229.884233375'
+exitcode: null
+exp_dir: dgx-spark/local/l2/20260910_120229
+job_id: 1519223
+postprocess: null
+preprocess: null
+queued_timestamp: '20260910_120229.009957'
+scheduler: local
+start_timestamp: '20260910_120229.012523711'
+status: COMPLETED
+tag: l2
+variables:
+  reps: 101
+  steps: 16384

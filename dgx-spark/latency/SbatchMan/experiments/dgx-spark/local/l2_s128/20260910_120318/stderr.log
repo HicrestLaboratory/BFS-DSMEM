@@ -1,0 +1,3 @@
+l2 summary (per load):
+  cycles          n=101  min=341.11  p25=341.15  median=341.16  mean=341.16  sd=0.03  p95=341.21  max=341.31
+  ns              n=101  min=141.84  p25=141.86  median=141.86  mean=141.86  sd=0.01  p95=141.88  max=141.93

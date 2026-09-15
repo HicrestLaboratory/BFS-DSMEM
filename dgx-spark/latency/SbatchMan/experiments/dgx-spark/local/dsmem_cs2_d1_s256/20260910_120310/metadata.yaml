@@ -1,0 +1,20 @@
+archive_name: null
+cluster_name: dgx-spark
+command: ./dsmem_remote --cluster-size 2 --distance 1 --stride 256 --reps 101 --steps
+  16384
+config_name: local
+end_timestamp: '20260910_120311.066815280'
+exitcode: null
+exp_dir: dgx-spark/local/dsmem_cs2_d1_s256/20260910_120310
+job_id: 1520143
+postprocess: null
+preprocess: null
+queued_timestamp: '20260910_120310.374418'
+scheduler: local
+start_timestamp: '20260910_120310.377847641'
+status: COMPLETED
+tag: dsmem_cs2_d1_s256
+variables:
+  reps: 101
+  steps: 16384
+  stride: 256

@@ -1,0 +1,20 @@
+archive_name: null
+cluster_name: dgx-spark
+command: ./dsmem_remote --cluster-size 12 --distance 2 --reps 101 --steps 16384
+config_name: local
+end_timestamp: '20260910_120249.016770366'
+exitcode: null
+exp_dir: dgx-spark/local/dsmem_cs12_d2/20260910_120248
+job_id: 1519562
+postprocess: null
+preprocess: null
+queued_timestamp: '20260910_120248.353032'
+scheduler: local
+start_timestamp: '20260910_120248.355784307'
+status: COMPLETED
+tag: dsmem_cs12_d2
+variables:
+  cluster_size: 12
+  distance: 2
+  reps: 101
+  steps: 16384

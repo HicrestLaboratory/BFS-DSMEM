@@ -1,0 +1,3 @@
+dram summary (per load):
+  cycles          n=101  min=933.44  p25=964.43  median=965.72  mean=965.06  sd=8.03  p95=970.37  max=1021.31
+  ns              n=101  min=388.15  p25=401.04  median=401.57  mean=401.29  sd=3.34  p95=403.50  max=424.68

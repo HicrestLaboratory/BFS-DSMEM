@@ -1,0 +1,18 @@
+archive_name: pre-stride
+cluster_name: dgx-spark
+command: ./smem_local --reps 101 --steps 16384
+config_name: local
+end_timestamp: '20260907_111837.358190932'
+exitcode: null
+exp_dir: dgx-spark/local/smem_local/20260907_111836
+job_id: 1460382
+postprocess: null
+preprocess: null
+queued_timestamp: '20260907_111836.916523'
+scheduler: local
+start_timestamp: '20260907_111836.922888227'
+status: COMPLETED
+tag: smem_local
+variables:
+  reps: 101
+  steps: 16384

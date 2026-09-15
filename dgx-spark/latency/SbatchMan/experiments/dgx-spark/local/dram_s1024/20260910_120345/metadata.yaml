@@ -1,0 +1,19 @@
+archive_name: null
+cluster_name: dgx-spark
+command: ./dram --stride 1024 --reps 101 --steps 16384
+config_name: local
+end_timestamp: '20260910_120347.908495715'
+exitcode: null
+exp_dir: dgx-spark/local/dram_s1024/20260910_120345
+job_id: 1520655
+postprocess: null
+preprocess: null
+queued_timestamp: '20260910_120345.376355'
+scheduler: local
+start_timestamp: '20260910_120345.379955818'
+status: COMPLETED
+tag: dram_s1024
+variables:
+  reps: 101
+  steps: 16384
+  stride: 1024

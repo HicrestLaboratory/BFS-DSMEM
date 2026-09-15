@@ -1,0 +1,22 @@
+archive_name: null
+cluster_name: dgx-spark
+command: ./latency-many-threads --target remote --requesters 2 --chasers 256 --reps
+  11 --steps 16384
+config_name: local
+end_timestamp: '20260914_081938.711451422'
+exitcode: null
+exp_dir: dgx-spark/local/loaded_remote_r2_c256/20260914_081937
+job_id: 1597983
+postprocess: null
+preprocess: null
+queued_timestamp: '20260914_081937.286392'
+scheduler: local
+start_timestamp: '20260914_081937.289140867'
+status: COMPLETED
+tag: loaded_remote_r2_c256
+variables:
+  chasers: 256
+  reps: 11
+  requesters: 2
+  steps: 16384
+  target: remote

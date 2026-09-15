@@ -1,0 +1,20 @@
+archive_name: null
+cluster_name: dgx-spark
+command: ./smem_cluster_local --cluster-size 8 --mapped 0 --reps 101 --steps 16384
+config_name: local
+end_timestamp: '20260913_192511.846019272'
+exitcode: null
+exp_dir: dgx-spark/local/smem_cluster_local_cs8_m0/20260913_192511
+job_id: 1585555
+postprocess: null
+preprocess: null
+queued_timestamp: '20260913_192511.412182'
+scheduler: local
+start_timestamp: '20260913_192511.414476780'
+status: COMPLETED
+tag: smem_cluster_local_cs8_m0
+variables:
+  cluster_size: 8
+  mapped: 0
+  reps: 101
+  steps: 16384

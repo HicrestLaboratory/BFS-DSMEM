@@ -1,0 +1,19 @@
+archive_name: null
+cluster_name: dgx-spark
+command: ./dram --stride random --reps 101 --steps 16384
+config_name: local
+end_timestamp: '20260910_120328.151100719'
+exitcode: null
+exp_dir: dgx-spark/local/dram_srandom/20260910_120323
+job_id: 1520460
+postprocess: null
+preprocess: null
+queued_timestamp: '20260910_120323.338818'
+scheduler: local
+start_timestamp: '20260910_120323.342031875'
+status: COMPLETED
+tag: dram_srandom
+variables:
+  reps: 101
+  steps: 16384
+  stride: random

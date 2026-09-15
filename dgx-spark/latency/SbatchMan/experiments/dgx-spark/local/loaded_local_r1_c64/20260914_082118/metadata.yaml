@@ -1,0 +1,22 @@
+archive_name: null
+cluster_name: dgx-spark
+command: ./latency-many-threads --target local --requesters 1 --chasers 64 --reps
+  11 --steps 16384
+config_name: local
+end_timestamp: '20260914_082118.880793979'
+exitcode: null
+exp_dir: dgx-spark/local/loaded_local_r1_c64/20260914_082118
+job_id: 1598464
+postprocess: null
+preprocess: null
+queued_timestamp: '20260914_082118.483702'
+scheduler: local
+start_timestamp: '20260914_082118.485938255'
+status: COMPLETED
+tag: loaded_local_r1_c64
+variables:
+  chasers: 64
+  reps: 11
+  requesters: 1
+  steps: 16384
+  target: local

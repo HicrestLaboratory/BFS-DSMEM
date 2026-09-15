@@ -1,0 +1,20 @@
+archive_name: pre-stride
+cluster_name: dgx-spark
+command: ./dsmem_remote --cluster-size 12 --distance 9 --reps 101 --steps 16384
+config_name: local
+end_timestamp: '20260907_111901.590814185'
+exitcode: null
+exp_dir: dgx-spark/local/dsmem_cs12_d9/20260907_111900
+job_id: 1460835
+postprocess: null
+preprocess: null
+queued_timestamp: '20260907_111900.932519'
+scheduler: local
+start_timestamp: '20260907_111900.934970188'
+status: COMPLETED
+tag: dsmem_cs12_d9
+variables:
+  cluster_size: 12
+  distance: 9
+  reps: 101
+  steps: 16384

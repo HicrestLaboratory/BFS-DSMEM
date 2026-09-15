@@ -1,0 +1,4 @@
+dsmem_loaded: 8 requester(s) x 1024 chaser(s) = 256 chasing warps, target rank 0
+  mean cy/load    n=11  min=109990.20  p25=109992.48  median=109993.79  mean=109996.17  sd=7.26  p95=110006.49  max=110015.05
+  GB/s            n=11  min=0.72  p25=0.72  median=0.72  mean=0.72  sd=0.00  p95=0.72  max=0.72
+  little's law: 0.07 loads/cycle x 109993.8 cy = 8208 loads in flight (8192 chasing threads issued)

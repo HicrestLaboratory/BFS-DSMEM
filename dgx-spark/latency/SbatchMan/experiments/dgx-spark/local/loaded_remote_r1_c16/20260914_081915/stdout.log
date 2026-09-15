@@ -1,0 +1,32 @@
+# command: ./latency-many-threads --target remote --requesters 1 --chasers 16 --reps 11 --steps 16384
+# gpu: NVIDIA GB10
+# compute_capability: 12.1
+# sm_count: 48
+# l2_bytes: 25165824
+# sm_clock_max_khz: 2418000
+# driver_version: 13000
+# runtime_version: 13000
+# seed: 42
+# reps: 11
+# steps: 16384
+# warmup: 1
+# buffer_elems: 4096
+# stride_bytes: 0
+# cycle_length: 4096
+# chasers: 16
+# requesters: 1
+# target: remote
+# bank_aligned: 1
+# warps_per_requester: 1
+benchmark,cluster_size,distance,mapped,block_size,steps,buffer_bytes,stride_bytes,seed,rep,cycles,ns,cycles_per_load,ns_per_load,ghz,chasers,warp
+dsmem_loaded,2,0,1,32,16384,0,0,42,0,6568442,2731328,400.9059,166.7070,2.4049,16,0
+dsmem_loaded,2,0,1,32,16384,0,0,42,1,6568442,2731296,400.9059,166.7051,2.4049,16,0
+dsmem_loaded,2,0,1,32,16384,0,0,42,2,6568442,2731328,400.9059,166.7070,2.4049,16,0
+dsmem_loaded,2,0,1,32,16384,0,0,42,3,6568442,2731328,400.9059,166.7070,2.4049,16,0
+dsmem_loaded,2,0,1,32,16384,0,0,42,4,6568442,2731296,400.9059,166.7051,2.4049,16,0
+dsmem_loaded,2,0,1,32,16384,0,0,42,5,6568442,2731328,400.9059,166.7070,2.4049,16,0
+dsmem_loaded,2,0,1,32,16384,0,0,42,6,6568442,2731296,400.9059,166.7051,2.4049,16,0
+dsmem_loaded,2,0,1,32,16384,0,0,42,7,6568442,2731392,400.9059,166.7109,2.4048,16,0
+dsmem_loaded,2,0,1,32,16384,0,0,42,8,6568442,2731296,400.9059,166.7051,2.4049,16,0
+dsmem_loaded,2,0,1,32,16384,0,0,42,9,6568442,2731328,400.9059,166.7070,2.4049,16,0
+dsmem_loaded,2,0,1,32,16384,0,0,42,10,6568442,2731360,400.9059,166.7090,2.4048,16,0

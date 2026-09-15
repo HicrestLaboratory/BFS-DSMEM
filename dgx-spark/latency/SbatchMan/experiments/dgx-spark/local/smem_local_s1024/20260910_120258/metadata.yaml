@@ -1,0 +1,19 @@
+archive_name: null
+cluster_name: dgx-spark
+command: ./smem_local --stride 1024 --reps 101 --steps 16384
+config_name: local
+end_timestamp: '20260910_120259.383864393'
+exitcode: null
+exp_dir: dgx-spark/local/smem_local_s1024/20260910_120258
+job_id: 1519814
+postprocess: null
+preprocess: null
+queued_timestamp: '20260910_120258.958084'
+scheduler: local
+start_timestamp: '20260910_120258.960199707'
+status: COMPLETED
+tag: smem_local_s1024
+variables:
+  reps: 101
+  steps: 16384
+  stride: 1024

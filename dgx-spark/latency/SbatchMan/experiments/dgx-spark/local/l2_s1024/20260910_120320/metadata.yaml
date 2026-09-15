@@ -1,0 +1,19 @@
+archive_name: null
+cluster_name: dgx-spark
+command: ./l2 --stride 1024 --reps 101 --steps 16384
+config_name: local
+end_timestamp: '20260910_120321.594871417'
+exitcode: null
+exp_dir: dgx-spark/local/l2_s1024/20260910_120320
+job_id: 1520406
+postprocess: null
+preprocess: null
+queued_timestamp: '20260910_120320.726021'
+scheduler: local
+start_timestamp: '20260910_120320.729614487'
+status: COMPLETED
+tag: l2_s1024
+variables:
+  reps: 101
+  steps: 16384
+  stride: 1024
