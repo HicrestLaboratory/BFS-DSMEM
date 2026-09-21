@@ -1,26 +1,35 @@
-// gpc.cu — empirically determine the number of GPCs (GPU Processing Clusters)
-// and the SM-to-GPC mapping of the installed GPU.
+// gpc.cu — measure the number of GPCs (GPU Processing Clusters) and the
+// SM-to-GPC mapping of the installed GPU.
 //
-// NVIDIA does not expose GPC count or SM-per-GPC topology through any public
-// CUDA runtime attribute. It can nevertheless be *measured*, because the
-// thread-block-cluster feature carries a hardware guarantee: all blocks of a
-// cluster are co-scheduled on SMs of a single GPC. So:
+// NVIDIA exposes neither through any public CUDA attribute. Both can be
+// measured, because thread block clusters carry a hardware guarantee: all
+// blocks of a cluster are co-scheduled on SMs of a SINGLE GPC.
 //
-//   1. Launch a grid of clusters; every block reports the SM it landed on
-//      (the %smid special register).
-//   2. Two SMs observed in the same cluster must belong to the same GPC.
-//      Union-find over those co-occurrences builds the GPC partition.
-//   3. Repeat over many trials so the scheduler exercises different
-//      placements and every SM is eventually observed.
+// That guarantee becomes a direct read-out once two conditions hold:
 //
-// The number of connected components is the GPC count. A cross-check comes
-// for free: the largest launchable cluster cannot exceed one GPC's SM count.
+//   * the cluster size equals a GPC's SM count (12 here, the largest size
+//     this GPU accepts — see properties.cu), so one cluster fills one GPC
+//     exactly; and
+//   * each block requests more than half the SM's shared memory, which
+//     forces one block per SM, so a cluster of 12 blocks occupies 12
+//     DISTINCT SMs.
+//
+// Then a single launch of 48 blocks is 4 clusters covering all 48 SMs exactly
+// once, and the clusters ARE the GPCs. Group the blocks by cluster and the
+// mapping falls out. No inference, no merging, no repetition.
+//
+// A note on what this file used to do: an earlier version accumulated
+// "these two SMs were seen in the same cluster" facts across hundreds of
+// trials and merged them with a union-find (disjoint-set) structure. That is
+// the right approach when clusters are smaller than a GPC and each launch
+// only samples part of the device. Here it was doing no work: 30 independent
+// runs of a single launch produced the identical partition, with all 48 SMs
+// observed every time. The union-find and the trial loop are gone.
 //
 // Build: nvcc -O3 -arch=sm_121 gpc.cu -o gpc
-// Run:   ./gpc [trials=200]
+// Run:   ./gpc
 
 #include <cooperative_groups.h>
-#include <algorithm>
 #include <map>
 #include <set>
 #include <vector>
@@ -29,45 +38,28 @@
 
 namespace cg = cooperative_groups;
 
-// Every block reports its SM id and its cluster id. The dynamic shared memory
-// request (sized by the host) is what forces one block per SM, so that a
-// cluster of N blocks necessarily occupies N distinct SMs.
+// Every block reports the SM it landed on and the cluster it belongs to.
+// The dynamic shared memory request (sized by the host) is what forces one
+// block per SM.
 __global__ void record_placement(unsigned* smids, unsigned* clusterIds) {
     extern __shared__ char scratch[];
     cg::cluster_group c = cg::this_cluster();
     if (threadIdx.x == 0) {
         scratch[0] = 1;  // touch the allocation so it is not optimized away
         smids[blockIdx.x] = smid();
-        clusterIds[blockIdx.x] = blockIdx.x / c.num_blocks();
+        clusterIds[blockIdx.x] = (unsigned)cg::this_grid().cluster_rank();
     }
     c.sync();  // hold every block resident until the whole cluster has reported
 }
 
-// ---------------- union-find over SM ids ----------------
-struct DSU {
-    std::vector<int> p;
-    explicit DSU(int n) : p(n) {
-        for (int i = 0; i < n; i++) p[i] = i;
-    }
-    int find(int x) { return p[x] == x ? x : p[x] = find(p[x]); }
-    void unite(int a, int b) {
-        a = find(a);
-        b = find(b);
-        if (a != b) p[a] = b;
-    }
-};
-
-int main(int argc, char** argv) {
-    int trials = argc > 1 ? atoi(argv[1]) : 300;
-
+int main() {
     cudaDeviceProp prop;
     CUDA_CHECK(cudaGetDeviceProperties(&prop, 0));
     const int numSM = prop.multiProcessorCount;
-    const int clusterSize = 12; // see properties.cu
+    const int clusterSize = 12;  // the largest this GPU accepts; see properties.cu
 
     // One block per SM: request more than half of the SM's shared memory so a
-    // second block cannot fit alongside. Without this, several blocks of a
-    // cluster could share an SM and the co-occurrence data would be sparser.
+    // second block cannot fit alongside.
     int smemPerSM = 0;
     CUDA_CHECK(cudaDeviceGetAttribute(&smemPerSM,
                                       cudaDevAttrMaxSharedMemoryPerMultiprocessor, 0));
@@ -77,80 +69,63 @@ int main(int argc, char** argv) {
     CUDA_CHECK(cudaFuncSetAttribute((void*)record_placement,
                                     cudaFuncAttributeMaxDynamicSharedMemorySize,
                                     smemPerBlock));
-    printf("=== Placement sampling ===\n");
-    printf("Forcing 1 block/SM with %d B dynamic shared memory per block\n",
-           smemPerBlock);
 
-    // Enough clusters to cover the device, rounded down to whole clusters.
     const int numClusters = numSM / clusterSize;
     const int numBlocks = numClusters * clusterSize;
-    printf("Launching %d clusters x %d blocks = %d blocks, %d trials\n\n",
-           numClusters, clusterSize, numBlocks, trials);
 
-    // array of 48 unsigned, one per block, filled by the kernel: dSmid[i] = the SM id block i ran on
-    unsigned *dSmid;
-    // dCid[i] = which cluster block i belongs to (blockIdx.x / 12, so 0–3)
-    unsigned *dCid;
+    printf("=== Placement ===\n");
+    printf("Forcing 1 block/SM with %d B dynamic shared memory per block\n", smemPerBlock);
+    printf("One launch: %d clusters x %d blocks = %d blocks over %d SMs\n\n",
+           numClusters, clusterSize, numBlocks, numSM);
+    if (numBlocks != numSM)
+        printf("NOTE: %d SM(s) are not covered because %d does not divide %d.\n\n",
+               numSM - numBlocks, clusterSize, numSM);
+
+    unsigned *dSmid, *dCid;
     CUDA_CHECK(cudaMallocManaged(&dSmid, numBlocks * sizeof(unsigned)));
     CUDA_CHECK(cudaMallocManaged(&dCid, numBlocks * sizeof(unsigned)));
+    for (int i = 0; i < numBlocks; i++) dSmid[i] = 0xFFFFFFFFu;  // detect blocks that never ran
 
-    // the union-find structure over the 48 SM ids.
-    // It persists across all trials and accumulates the "same-GPC" facts:
-    // for each list in byCluster, every SM is united with the first one.
-    DSU dsu(numSM);
-    // a set of every SM id observed in any trial. Persists across trials.
+    cudaLaunchConfig_t cfg = {};
+    cfg.gridDim = dim3(numBlocks, 1, 1);
+    cfg.blockDim = dim3(32, 1, 1);
+    cfg.dynamicSmemBytes = smemPerBlock;
+    cudaLaunchAttribute at[1];
+    at[0].id = cudaLaunchAttributeClusterDimension;
+    at[0].val.clusterDim.x = clusterSize;
+    at[0].val.clusterDim.y = 1;
+    at[0].val.clusterDim.z = 1;
+    cfg.attrs = at;
+    cfg.numAttrs = 1;
+    CUDA_CHECK(cudaLaunchKernelEx(&cfg, record_placement, dSmid, dCid));
+    CUDA_CHECK(cudaDeviceSynchronize());
+
+    // A cluster is confined to one GPC, so the blocks of cluster c name the
+    // SMs of one GPC. Group by cluster and sort for readability.
+    std::map<unsigned, std::vector<int>> byCluster;
     std::set<int> seenSMs;
-    int usableTrials = 0;
-
-    for (int t = 0; t < trials; t++) {
-        // Reset the SM id array to an impossible value so we can detect which blocks ran and which did not.
-        for (int i = 0; i < numBlocks; i++) dSmid[i] = 0xFFFFFFFFu;
-
-        cudaLaunchConfig_t cfg = {};
-        cfg.gridDim = dim3(numBlocks, 1, 1);
-        cfg.blockDim = dim3(32, 1, 1);
-        cfg.dynamicSmemBytes = smemPerBlock;
-        cudaLaunchAttribute at[1];
-        at[0].id = cudaLaunchAttributeClusterDimension;
-        at[0].val.clusterDim.x = clusterSize;
-        at[0].val.clusterDim.y = 1;
-        at[0].val.clusterDim.z = 1;
-        cfg.attrs = at;
-        cfg.numAttrs = 1;
-        CUDA_CHECK(cudaLaunchKernelEx(&cfg, record_placement, dSmid, dCid));
-        CUDA_CHECK(cudaDeviceSynchronize());
-        usableTrials++;
-
-        // Merge every SM seen in the same cluster.
-        std::map<unsigned, std::vector<unsigned>> byCluster;
-        for (int i = 0; i < numBlocks; i++) {
-            if (dSmid[i] == 0xFFFFFFFFu) continue;
-            byCluster[dCid[i]].push_back(dSmid[i]);
-            seenSMs.insert((int)dSmid[i]);
-        }
-        for (auto& kv : byCluster)
-            for (size_t j = 1; j < kv.second.size(); j++)
-                dsu.unite((int)kv.second[0], (int)kv.second[j]);
+    for (int i = 0; i < numBlocks; i++) {
+        if (dSmid[i] == 0xFFFFFFFFu) continue;
+        byCluster[dCid[i]].push_back((int)dSmid[i]);
+        seenSMs.insert((int)dSmid[i]);
     }
-
-    // ---------------- results ----------------
-    std::map<int, std::vector<int>> groups;
-    for (int sm : seenSMs) groups[dsu.find(sm)].push_back(sm);
+    for (auto& kv : byCluster) std::sort(kv.second.begin(), kv.second.end());
 
     printf("=== SM -> GPC mapping ===\n");
-    printf("SMs observed: %zu of %d\n", seenSMs.size(), numSM);
-    if ((int)seenSMs.size() < numSM)
-        printf("WARNING: %d SM(s) never sampled; raise the trial count.\n",
-               numSM - (int)seenSMs.size());
+    printf("SMs observed: %zu of %d%s\n", seenSMs.size(), numSM,
+           (int)seenSMs.size() == numBlocks ? " (every block on a distinct SM)"
+                                            : "  <- two blocks shared an SM!");
 
     int gpc = 0;
     bool uniform = true;
-    size_t firstSize = groups.empty() ? 0 : groups.begin()->second.size();
-    for (auto& kv : groups) {
-        printf("  GPC %d (%zu SMs): ", gpc++, kv.second.size());
-        for (int sm : kv.second) printf("%d ", sm);
+    size_t firstSize = byCluster.empty() ? 0 : byCluster.begin()->second.size();
+    std::map<int, int> gpcOf;  // smid -> printed GPC index
+    for (auto& kv : byCluster) {
+        printf("  GPC %d (%zu SMs): ", gpc, kv.second.size());
+        for (int sm : kv.second) { printf("%d ", sm); gpcOf[sm] = gpc; }
         printf("\n");
         if (kv.second.size() != firstSize) uniform = false;
+        gpc++;
     }
 
     printf("\n=== Result ===\n");
@@ -167,17 +142,14 @@ int main(int argc, char** argv) {
     printf("Cross-check: max cluster size %d %s largest GPC size %zu\n", clusterSize,
            (size_t)clusterSize == firstSize ? "==" : "!=", firstSize);
 
-    // SM ids are typically interleaved across GPCs rather than assigned in
-    // contiguous ranges. Test the common round-robin-by-TPC layout, in which
-    // consecutive SMs form a TPC pair and consecutive TPCs cycle over GPCs:
-    //     TPC  = smid / 2,  GPC = TPC % numGPC
+    // SM ids are interleaved across GPCs rather than assigned in contiguous
+    // ranges. Test the round-robin-by-TPC layout, in which consecutive SMs
+    // form a TPC pair and consecutive TPCs cycle over GPCs:
+    //     TPC = smid / 2,  GPC = TPC % numGPC
     if (gpc > 0 && uniform) {
-        std::map<int, int> gpcIndex;  // dsu root -> printed GPC index
-        int idx = 0;
-        for (auto& kv : groups) gpcIndex[kv.first] = idx++;
         bool formulaHolds = true;
         for (int sm : seenSMs)
-            if ((sm / 2) % gpc != gpcIndex[dsu.find(sm)]) formulaHolds = false;
+            if ((sm / 2) % gpc != gpcOf[sm]) formulaHolds = false;
         printf("\n=== Derived SM addressing ===\n");
         if (formulaHolds) {
             printf("Layout confirmed: TPC = smid/2, GPC = (smid/2) %% %d\n", gpc);
