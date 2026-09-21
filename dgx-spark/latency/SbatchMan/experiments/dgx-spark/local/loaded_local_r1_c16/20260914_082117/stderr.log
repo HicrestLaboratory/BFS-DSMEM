@@ -1,4 +1,0 @@
-smem_loaded: 1 requester(s) x 16 chaser(s) = 1 chasing warps, target own
-  mean cy/load    n=11  min=32.44  p25=32.44  median=32.44  mean=32.44  sd=0.00  p95=32.44  max=32.44
-  GB/s            n=11  min=4.74  p25=4.74  median=4.74  mean=4.74  sd=0.00  p95=4.74  max=4.74
-  little's law: 0.49 loads/cycle x 32.4 cy = 16 loads in flight (16 chasing threads issued)

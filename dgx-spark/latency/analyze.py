@@ -66,7 +66,7 @@ def main():
         .reset_index()
     )
     # Present in the order a reader expects: cheapest memory first.
-    order = {"smem_local": 0, "smem_cluster_local": 1, "dsmem_remote": 2, "l2": 3, "dram": 4, "chain": 5,
+    order = {"smem_local": 0, "smem_cluster_local": 1, "dsmem_remote": 2, "l1": 3, "l2": 4, "dram": 5, "chain": 6,
              "smem_loaded": 6, "dsmem_loaded": 7}
     summary["_o"] = summary["benchmark"].map(order)
     summary = summary.sort_values(["_o", "cluster_size", "distance", "mapped", "stride_bytes", "buffer_bytes", "chasers"]).drop(columns="_o")

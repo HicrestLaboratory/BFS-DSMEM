@@ -252,6 +252,21 @@ void print_header(int argc, char** argv, const Args& a, size_t n_elems,
 
     printf("# command:");
     for (int i = 0; i < argc; i++) printf(" %s", argv[i]);
+    printf("\n");
+    printf("# gpu: %s\n", prop.name);
+    printf("# compute_capability: %d.%d\n", prop.major, prop.minor);
+    printf("# sm_count: %d\n", prop.multiProcessorCount);
+    printf("# l2_bytes: %d\n", prop.l2CacheSize);
+    printf("# sm_clock_max_khz: %d\n", khz);
+    printf("# driver_version: %d\n", drv);
+    printf("# runtime_version: %d\n", rt);
+    printf("# seed: %d\n", a.seed);
+    printf("# reps: %d\n", a.reps);
+    printf("# steps: %d\n", a.steps);
+    printf("# warmup: %d\n", a.warmup);
+    printf("# buffer_elems: %zu\n", n_elems);
+    printf("# stride_bytes: %d\n", a.stride_bytes);
+    printf("# cycle_length: %zu\n", cycle_length(n_elems, a.stride_bytes));
     if (extra) fputs(extra, stdout);
     printf("benchmark,cluster_size,distance,mapped,block_size,steps,"
            "buffer_bytes,stride_bytes,seed,rep,cycles,ns,cycles_per_load,"

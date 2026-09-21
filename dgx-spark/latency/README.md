@@ -11,6 +11,7 @@ only medians; that file is kept untouched as the reference implementation.
 | `smem_local` | own shared memory, plain block — the baseline |
 | `smem_cluster_local` | own shared memory from inside a cluster (`--mapped 0` direct pointer, `--mapped 1` via `map_shared_rank` to self) |
 | `dsmem_remote` | another block's shared memory at `--distance` ranks (DSMEM) |
+| `l1` | global memory resident in the SM's L1 (warmed in-kernel: L1 is per-SM and does not survive a launch) |
 | `l2` | global memory resident in L2 |
 | `dram` | global memory not in any cache |
 | `chain` | the same chase at any buffer size (`--buffer-kib`), for the latency-vs-working-set curve |

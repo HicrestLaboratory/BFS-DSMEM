@@ -233,45 +233,6 @@
 
 \end{frame}
 
-% ============================================================ 6. cluster residency cap
-\begin{frame}{Clusters are not free: TODO}
-  \vspace{0.5em}
-  \scriptsize
-  The moment a launch carries a cluster dimension, the device holds \textbf{2 blocks
-  per SM --- 96 in total --- whatever the block size.} Confirmed two independent ways:
-  \texttt{cudaOccupancyMaxActiveClusters}, and a rendezvous test in which every block
-  must observe all the others before a timeout.
-
-  \vspace{0.5em}
-  \centering
-  \begin{tabular}{lcccc}
-    \toprule
-    \textbf{blockDim} & \textbf{unclustered} & \textbf{clustered} & \textbf{penalty} & \textbf{occupancy} \\
-    \midrule
-    64   & 1152 & 96 & \textbf{12$\times$} & 8\% \\
-    128  & 576  & 96 & 6$\times$           & 17\% \\
-    256  & 288  & 96 & 3$\times$           & 33\% \\
-    512  & 144  & 96 & 1.5$\times$         & \textbf{67\%} \\
-    1024 & 48   & 48 & none                & 67\% \\
-    \bottomrule
-  \end{tabular}
-
-  \vspace{0.6em}
-  \raggedright
-  \begin{itemize}\itemsep1pt
-    \item Every cluster size multiplies out to the same 96: sizes 1/2/4/6/8/12 give
-          96/48/24/16/12/8 clusters --- as if there were \emph{2 cluster slots per SM}.
-    \item \textbf{Not} registers or warps (unclustered the same kernel gets 24 blocks/SM),
-          \textbf{not} shared memory (it allocates none; the cap holds at every carveout),
-          \textbf{not} the cluster API (free without a cluster dimension). The cap appears
-          only when the launch carries one.
-    \item \alert{The lever is block size, not cluster size:} 512-thread blocks keep 67\%
-          occupancy where the natural-looking 128 silently loses 4$\times$. Mechanism
-          undocumented by NVIDIA --- \emph{still investigating.}
-  \end{itemize}
-
-\end{frame}
-
 % ============================================================ 5a. GPC method
 \begin{frame}{How many GPCs?}
   \vspace{0.7em}
@@ -335,8 +296,7 @@
   \vspace{0.2em}
   \footnotesize
   Dependent random pointer chase, 16\,384 steps, one thread, median of 101 reps.
-
-  \vspace{0.2em}
+  \vspace{-0.5em}
   \begin{itemize}\itemsep0pt
     \item \textbf{Sattolo cycle.} One random cycle over all elements: no short cycles, nothing for a prefetcher.
     \item \textbf{Dependency defeats overlap.} Load $i{+}1$ needs the value of load $i$: pure latency, no MLP.
@@ -348,10 +308,10 @@
     \toprule
     \textbf{Placement} & \textbf{GB10 (cy)} & \textbf{ns} & \textbf{H800 (cy)}$^{\star}$ \\
     \midrule
+    L1 Cache                                     & 43.2      & 17.9      & 32.0 \\
     SMEM                 & 32.9 & 13.7 & 29.0 \\
-    SMEM, via Cooperative Groups API      & 36.9 & 15.3 & 33.0 \\
-    \midrule
-    L1 Cache                                     & 42.9      & 17.9      & 32.0 \\
+    SMEM, via DSMEM API      & 36.9 & 15.3 & 33.0 \\
+    DSMEM      & 180-211 & 75-88 & 181-213 \\
     L2 Cache                                     & 340.1     & 141.7     & 264--502 \\
     DRAM                                       & 965.8     & 401.6     & 656 \\
     \bottomrule
@@ -362,7 +322,7 @@
 
   \vspace{0.2em}
   \raggedright
-  \footnotesize
+  \scriptsize
   \textbf{Why does SMEM via DSMEM cost 4 more cycles?} \texttt{map\_shared\_rank} returns a generic pointer, so the load compiles to \texttt{LD} (address space resolved by hardware on every access) instead of \texttt{LDS} (a plain shared-memory load).
 \end{frame}
 
@@ -370,14 +330,12 @@
   \vspace{0.2em}
   \footnotesize
   Dependent random pointer chase, 16\,384 steps, one thread, median of 101 reps.
-
-  \vspace{0.2em}
+  \vspace{-0.5em}
   \begin{itemize}\itemsep0pt
     \item \textbf{Sattolo cycle.} One random cycle over all elements: no short cycles, nothing for a prefetcher.
     \item \textbf{Dependency defeats overlap.} Load $i{+}1$ needs the value of load $i$: pure latency, no MLP.
   \end{itemize}
 
-  \vspace{0.2em}
   \centering
   \begin{figure}
     \includegraphics[width=0.7\linewidth]{images/chain_latency.png}
@@ -426,7 +384,7 @@
       \begin{itemize}\itemsep2pt
         \item \textbf{SMEM/DSMEM are pattern-blind}
         \item \textbf{L2/DRAM see only the 32\,B sector} $k = 32/s$ loads share one
-              L1 fill, $(T + (k-1)\cdot 42.9)/k$ gives 80/118/192\,cy (L2) and
+              L1 fill, $(T + (k-1)\cdot 43.2)/k$ gives 80/118/192\,cy (L2) and
               155/266/490\,cy (DRAM) --- as measured.
         \item \textbf{No hardware prefetcher:} from 32\,B on, linear $=$ random.
       \end{itemize}
@@ -434,26 +392,115 @@
   \end{columns}
 \end{frame}
 
+% ============================================================ 6. cluster residency cap
+\begin{frame}{Clusters are not free}
+  \vspace{0.5em}
+  \footnotesize
+  The moment a launch carries a cluster dimension, the device holds \textbf{2 blocks
+  per SM at most (96 in total), whatever the block size.}
 
+  \vspace{0.5em}
+  \centering
+  \begin{tabular}{lcccc}
+    \toprule
+    \textbf{blockDim} & \textbf{total blocks} & \textbf{total blocks} & \textbf{penalty} & \textbf{occupancy} \\
+     & \textbf{(unclustered)} & \textbf{(clustered)} & & \textbf{(clustered)} \\
+    \midrule
+    64   & 1152 & 96 & \textbf{12$\times$} & 8\% \\
+    128  & 576  & 96 & 6$\times$           & 17\% \\
+    256  & 288  & 96 & 3$\times$           & 33\% \\
+    512  & 144  & 96 & 1.5$\times$         & \textbf{67\%} \\
+    1024 & 48   & 48 & none                & 67\% \\
+    \bottomrule
+  \end{tabular}
 
-\begin{frame}{TODO}
-  \begin{itemize}\itemsep1pt\small
-    \item quanto si fa fatica a fare lo scheduling in concorrenza con altri processi (che impatto ha lo scheduler)
-    \item un altra versione del benchmark in cui non è solo il thread 0 a fare il chase, ma tutti i thread del cluster fanno il chase in concorrenza, e si misura quanto aumenta la latenza per via dello scheduling.
-    \item cosa succede se invece di una random chase usiamo una linear chase, cioè un buffer in cui ogni elemento punta al successivo, e l'ultimo punta al primo. In questo caso il prefetcher dovrebbe essere in grado di anticipare le richieste e ridurre la latenza.
-    \item provare a usare stride-n
-    \item tenersi la varianza, prendi le run, emetti tutti i numeri, passare i parametri da cli, ogni programma una casistica
-
-    \item slides con disegnini, come funziona l'accesso, il warmup
-    \item fare grafici
-    \item usare spatzman riproducibilità, come si fa a garantire che il benchmark sia riproducibile
+  \vspace{0.6em}
+  \raggedright
+  \begin{itemize}\itemsep1pt
+    \item \textbf{Confirmed two independent ways:} \texttt{cudaOccupancyMaxActiveClusters}, and a test in which every block must observe all the others before a timeout.
+    \item \textbf{Didn't found anything about this on the web...}
   \end{itemize}
+
+\end{frame}
+
+\begin{frame}{Clusters are not free}
+  \vspace{0.5em}
+  \footnotesize
+  The cap also moves with the \emph{shared memory} a block requests. Past
+  ${\sim}50$\,KiB only one block fits per SM, so the device holds 48.
+
+  \vspace{0.4em}
+  \centering
+  \begin{tabular}{lccccc}
+    \toprule
+    \textbf{SMEM / block} & \textbf{cs = 1} & \textbf{cs = 2} & \textbf{cs = 4} & \textbf{cs = 8} & \textbf{cs = 12} \\
+    \midrule
+    0            & 96 & 96 & 96 & 96          & 96 \\
+    32\,KiB      & 96 & 96 & 96 & 96          & 96 \\
+    50\,KiB      & 48 & 48 & 48 & \textbf{32} & 48 \\
+    99\,KiB      & 48 & 48 & 48 & \textbf{32} & 48 \\
+    \bottomrule
+  \end{tabular}
+
+  \vspace{0.3em}
+  {\scriptsize total resident blocks device-wide (48 SMs), \texttt{cs} = cluster size}
+
+  \vspace{0.6em}
+  \raggedright
+  \begin{itemize}\itemsep1pt
+    \item A cluster never spans a GPC, and a GPC has 12 SMs. One cluster of 8 leaves 4 SMs free --- too few for a second --- so each of the 4 GPCs runs one cluster and strands 4 SMs: $4 \times 8 = 32$, a third of the GPU idle.
+    \item \textbf{12 and 6 tile the machine exactly}; 8, the \emph{portable}
+          maximum, does not.
+  \end{itemize}
+
+\end{frame}
+
+% \begin{frame}{TODO}
+%   \begin{itemize}\itemsep1pt\small
+%     \item quanto si fa fatica a fare lo scheduling in concorrenza con altri processi (che impatto ha lo scheduler)
+%     \item un altra versione del benchmark in cui non è solo il thread 0 a fare il chase, ma tutti i thread del cluster fanno il chase in concorrenza, e si misura quanto aumenta la latenza per via dello scheduling.
+%     \item cosa succede se invece di una random chase usiamo una linear chase, cioè un buffer in cui ogni elemento punta al successivo, e l'ultimo punta al primo. In questo caso il prefetcher dovrebbe essere in grado di anticipare le richieste e ridurre la latenza.
+%     \item provare a usare stride-n
+%     \item tenersi la varianza, prendi le run, emetti tutti i numeri, passare i parametri da cli, ogni programma una casistica
+
+%     \item slides con disegnini, come funziona l'accesso, il warmup
+%     \item fare grafici
+%     \item usare spatzman riproducibilità, come si fa a garantire che il benchmark sia riproducibile
+%   \end{itemize}
+% \end{frame}
+
+\begin{frame}{Latency Benchmark -- Many Threads}
+\vspace{0.2em}
+  \centering
+  \begin{figure}
+    \includegraphics[width=0.99\linewidth]{images/loaded_latency.png}
+  \end{figure}
 \end{frame}
 
 \begin{frame}{What's next?}
-\begin{itemize}\itemsep1pt\small
-    \item Throughput benchmark?
-  \end{itemize}
+  \footnotesize
+  \begin{enumerate}\itemsep0pt
+    \item \textbf{Characterization of DSMEM}
+      \begin{itemize}\scriptsize\itemsep0pt
+        \item Performance characterization and impact of DSMEM
+        \item Limitations and assumptions of the DSMEM programming paradigm
+        \item Theoretical upper bounds on performance improvements
+        \item Applicability: algorithms that can and cannot exploit DSMEM
+      \end{itemize}
+    \item \textbf{State-of-the-art GPU-accelerated BFS}
+      \begin{itemize}\scriptsize\itemsep0pt
+        \item Graph partitioning strategies
+        \item Work-stealing techniques
+        \item Data types and data structures for high-performance BFS
+      \end{itemize}
+    \item \textbf{BFS implementation based on DSMEM}
+      \begin{itemize}\scriptsize\itemsep0pt
+        \item Algorithm design informed by (1) and (2)
+        \item Graph partitioning (probably 2D) and work stealing
+        \item Integration of \emph{mxint} (micro-scaling integer type), if worthwhile
+        \item Performance evaluation; limitations and future directions
+      \end{itemize}
+  \end{enumerate}
 \end{frame}
 
 \end{document}

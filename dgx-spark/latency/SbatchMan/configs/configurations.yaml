@@ -1,5 +1,0 @@
-dgx-spark:
-  scheduler: local
-  configs:
-    local:
-      scheduler: local

@@ -1,3 +1,0 @@
-dsmem_remote summary (per load):
-  cycles          n=101  min=210.87  p25=210.87  median=210.87  mean=211.16  sd=2.86  p95=210.87  max=239.77
-  ns              n=101  min=87.68  p25=87.69  median=87.69  mean=87.81  sd=1.19  p95=87.69  max=99.71

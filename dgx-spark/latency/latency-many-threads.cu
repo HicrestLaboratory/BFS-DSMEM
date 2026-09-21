@@ -60,20 +60,26 @@ __global__ void loaded_chase(const unsigned* __restrict__ perm, int chasers,
 
     unsigned rank = cluster.block_rank();
     if (rank != 0 && (int)threadIdx.x < chasers) {  // rank 0 only owns memory
-        int lane = threadIdx.x & 31, warp = threadIdx.x >> 5;
+        // lane's position inside its warp
+        int lane = threadIdx.x & 31; // & 31 -> mod 32
+        // which warp it is.
+        int warp = threadIdx.x >> 5; // >> 5 -> divide by 32
         // Distinct starting points. Bank-aligned: lane l must start on an
         // element of bank l (index = l mod 32); warp w takes the w-th one.
         // Random cycle: any hash that spreads the threads out will do.
         unsigned start = bank_aligned
-            ? (unsigned)(lane + 32 * warp)
+            ? (unsigned)(lane + 32 * warp)  // this is just threadIdx.x, written to show the banks
             : (unsigned)(((threadIdx.x + 1024u * (rank - 1)) * 2654435761u) % SBUF);
         Result r;
         if (target_remote) {
             const unsigned* buf = cluster.map_shared_rank((const unsigned*)sbuf, 0);
             warm_then_chase(buf, start, warmup, steps, &r);
         } else {
-            warm_then_chase(sbuf, start, warmup, steps, &r);  // provably shared: LDS
+            warm_then_chase(sbuf, start, warmup, steps, &r);
         }
+        // write the elapsed time for this warp to its row in the output array.
+        // rank 1, warps 0 1 2 3  ->  out[0] out[1] out[2] out[3]
+        // rank 2, warps 0 1 2 3  ->  out[4] out[5] out[6] out[7]
         if (lane == 0) out[(rank - 1) * (blockDim.x / 32) + warp] = r;
     }
 
@@ -153,6 +159,7 @@ int main(int argc, char** argv) {
             sum_cpl += (double)out[i].cycles / a.steps;
             if ((double)out[i].ns > max_ns) max_ns = (double)out[i].ns;
         }
+        // Average cycles per load across all warps, for this repetition.
         mean_cpl.push_back(sum_cpl / rows);
         // Aggregate throughput of the whole cluster: all loads, over the
         // slowest warp's wall time (every warp started at the same barrier).

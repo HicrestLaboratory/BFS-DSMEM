@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026) (preloaded format=pdflatex 2026.9.6)  15 SEP 2026 16:19
+This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026) (preloaded format=pdflatex 2026.9.6)  21 SEP 2026 09:58
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -1395,7 +1395,7 @@ Package: textcomp 2024/04/24 v2.1b Standard LaTeX package
 \@quotelevel=\count535
 \@quotereset=\count536
 
-No file slides.aux.
+(./slides.aux)
 \openout1 = `slides.aux'.
 
 LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 113.
@@ -1416,6 +1416,7 @@ LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 113.
 LaTeX Font Info:    ... okay on input line 113.
 LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 113.
 LaTeX Font Info:    ... okay on input line 113.
+
 *geometry* driver: auto-detecting
 *geometry* detected driver: pdftex
 *geometry* verbose mode - [ preamble ] result:
@@ -1478,6 +1479,7 @@ File: epstopdf-sys.cfg 2010/07/13 v1.3 Configuration of (r)epstopdf for TeX Liv
 e
 ))
 Package hyperref Info: Link coloring OFF on input line 113.
+ (./slides.out) (./slides.out)
 \@outlinefile=\write7
 \openout7 = `slides.out'.
 
@@ -1571,9 +1573,10 @@ Package biblatex Info: Reference section=0 on input line 113.
 Package biblatex Info: Reference segment=0 on input line 113.
 Package caption Info: Begin \AtBeginDocument code.
 Package caption Info: End \AtBeginDocument code.
-No file slides.nav.
+(./slides.nav)
 LaTeX Font Info:    Trying to load font information for U+msa on input line 113
 .
+
 (/home/fabio.missagia/texlive/2026/texmf-dist/tex/latex/amsfonts/umsa.fd
 File: umsa.fd 2013/01/14 v3.01 AMS symbols A
 )
@@ -1618,78 +1621,82 @@ Overfull \vbox (5.52226pt too high) detected at line 204
 {/home/fabio.missagia/texlive/2026/texmf-dist/fonts/enc/dvips/cm-super/cm-super
 -ts1.enc}] [5
 
+] [6
+
 ]
-Overfull \vbox (16.51888pt too high) detected at line 273
+Overfull \vbox (7.16182pt too high) detected at line 292
  []
 
-[6
-
-] [7
+[7
 
 ]
-Overfull \vbox (7.16182pt too high) detected at line 331
+Overfull \vbox (12.69392pt too high) detected at line 327
  []
 
 [8
 
 ]
-Overfull \vbox (17.59975pt too high) detected at line 367
+<images/chain_latency.png, id=81, 578.16pt x 325.215pt>
+File: images/chain_latency.png Graphic file (type png)
+<use images/chain_latency.png>
+Package pdftex.def Info: images/chain_latency.png  used on input line 343.
+(pdftex.def)             Requested size: 278.83578pt x 156.84082pt.
+
+Overfull \vbox (19.34888pt too high) detected at line 343
  []
 
 [9
 
-]
-<images/chain_latency.png, id=89, 578.16pt x 325.215pt>
-File: images/chain_latency.png Graphic file (type png)
-<use images/chain_latency.png>
-Package pdftex.def Info: images/chain_latency.png  used on input line 385.
-(pdftex.def)             Requested size: 278.83578pt x 156.84082pt.
-
-Overfull \vbox (27.67178pt too high) detected at line 385
- []
-
-[10
-
  <./images/chain_latency.png>]
-<images/dsmem-distance.png, id=96, 939.51pt x 195.129pt>
+<images/dsmem-distance.png, id=88, 939.51pt x 195.129pt>
 File: images/dsmem-distance.png Graphic file (type png)
 <use images/dsmem-distance.png>
-Package pdftex.def Info: images/dsmem-distance.png  used on input line 408.
+Package pdftex.def Info: images/dsmem-distance.png  used on input line 366.
 (pdftex.def)             Requested size: 398.3386pt x 82.73071pt.
- [11
+ [10
 
  <./images/dsmem-distance.png>]
-<images/stride-smem.png, id=104, 542.025pt x 325.215pt>
+<images/stride-smem.png, id=96, 542.025pt x 325.215pt>
 File: images/stride-smem.png Graphic file (type png)
 <use images/stride-smem.png>
-Package pdftex.def Info: images/stride-smem.png  used on input line 435.
+Package pdftex.def Info: images/stride-smem.png  used on input line 393.
 (pdftex.def)             Requested size: 136.63106pt x 81.97842pt.
-<images/stride-dsmem-c2-d1.png, id=105, 542.025pt x 325.215pt>
+<images/stride-dsmem-c2-d1.png, id=97, 542.025pt x 325.215pt>
 File: images/stride-dsmem-c2-d1.png Graphic file (type png)
 <use images/stride-dsmem-c2-d1.png>
-Package pdftex.def Info: images/stride-dsmem-c2-d1.png  used on input line 435.
+Package pdftex.def Info: images/stride-dsmem-c2-d1.png  used on input line 393.
 
 (pdftex.def)             Requested size: 136.63106pt x 81.97842pt.
-<images/stride-l2.png, id=106, 542.025pt x 325.215pt>
+<images/stride-l2.png, id=98, 542.025pt x 325.215pt>
 File: images/stride-l2.png Graphic file (type png)
 <use images/stride-l2.png>
-Package pdftex.def Info: images/stride-l2.png  used on input line 435.
+Package pdftex.def Info: images/stride-l2.png  used on input line 393.
 (pdftex.def)             Requested size: 136.63106pt x 81.97842pt.
-<images/stride-dram.png, id=107, 542.025pt x 325.215pt>
+<images/stride-dram.png, id=99, 542.025pt x 325.215pt>
 File: images/stride-dram.png Graphic file (type png)
 <use images/stride-dram.png>
-Package pdftex.def Info: images/stride-dram.png  used on input line 435.
+Package pdftex.def Info: images/stride-dram.png  used on input line 393.
 (pdftex.def)             Requested size: 136.63106pt x 81.97842pt.
- [12
+ [11
 
  <./images/stride-smem.png> <./images/stride-dsmem-c2-d1.png> <./images/stride-
-l2.png> <./images/stride-dram.png>]
-Overfull \vbox (3.44952pt too high) detected at line 451
+l2.png> <./images/stride-dram.png>] [12
+
+]
+Overfull \vbox (2.72116pt too high) detected at line 456
  []
 
 [13
 
-] [14
+]
+<images/loaded_latency.png, id=125, 794.97pt x 310.761pt>
+File: images/loaded_latency.png Graphic file (type png)
+<use images/loaded_latency.png>
+Package pdftex.def Info: images/loaded_latency.png  used on input line 478.
+(pdftex.def)             Requested size: 394.35739pt x 154.16147pt.
+ [14
+
+ <./images/loaded_latency.png>] [15
 
 ]
 \tf@nav=\write8
@@ -1706,38 +1713,26 @@ Overfull \vbox (3.44952pt too high) detected at line 451
 Package caption Warning: Unused \captionsetup[sub] on input line 18.
 See the caption package documentation for explanation.
 
+runsystem(latexminted cleantemp  --timestamp 20260921095800 F4D5C52946E476C66DF
+C36433C82AA78)...executed safely (allowed).
+
 (./slides.aux)
  ***********
 LaTeX2e <2026-06-01>
 L3 programming layer <2026-08-10>
  ***********
-
-
-LaTeX Warning: There were undefined references.
-
-
-Package rerunfilecheck Warning: File `slides.out' has changed.
-(rerunfilecheck)                Rerun to get outlines right
-(rerunfilecheck)                or use package `bookmark'.
-
-Package rerunfilecheck Info: Checksums for `slides.out':
-(rerunfilecheck)             Before: <no file>
-(rerunfilecheck)             After:  D41D8CD98F00B204E9800998ECF8427E;0.
-
-Package biblatex Warning: Please (re)run BibTeX on the file(s):
-(biblatex)                slides
-(biblatex)                and rerun LaTeX afterwards.
-
+Package rerunfilecheck Info: File `slides.out' has not changed.
+(rerunfilecheck)             Checksum: D41D8CD98F00B204E9800998ECF8427E;0.
 Package logreq Info: Writing requests to 'slides.run.xml'.
 \openout1 = `slides.run.xml'.
 
  ) 
 Here is how much of TeX's memory you used:
- 41898 strings out of 468580
- 901072 string characters out of 5443027
- 1614443 words of memory out of 5000000
- 70316 multiletter control sequences out of 15000+600000
- 658695 words of font info for 108 fonts, out of 8000000 for 9000
+ 41984 strings out of 468580
+ 902664 string characters out of 5443027
+ 1614564 words of memory out of 5000000
+ 70392 multiletter control sequences out of 15000+600000
+ 659119 words of font info for 108 fonts, out of 8000000 for 9000
  319 hyphenation exceptions out of 8191
  102i,13n,123p,1876b,803s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </home/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/
@@ -1768,10 +1763,10 @@ m-super/sfsx1440.pfb></home/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/
 public/cm-super/sftt0800.pfb></home/fabio.missagia/texlive/2026/texmf-dist/font
 s/type1/public/cm-super/sftt0900.pfb></home/fabio.missagia/texlive/2026/texmf-d
 ist/fonts/type1/public/cm-super/sftt1000.pfb>
-Output written on slides.pdf (14 pages, 838551 bytes).
+Output written on slides.pdf (15 pages, 952188 bytes).
 PDF statistics:
- 250 PDF objects out of 1000 (max. 8388607)
- 157 compressed objects within 2 object streams
- 29 named destinations out of 1000 (max. 500000)
- 83 words of extra memory for PDF output out of 10000 (max. 10000000)
+ 255 PDF objects out of 1000 (max. 8388607)
+ 160 compressed objects within 2 object streams
+ 31 named destinations out of 1000 (max. 500000)
+ 88 words of extra memory for PDF output out of 10000 (max. 10000000)
 
