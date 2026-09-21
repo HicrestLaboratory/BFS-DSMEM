@@ -407,16 +407,19 @@ Overfull \vbox (0.49722pt too high) detected at line 172
 Overfull \vbox (5.52226pt too high) detected at line 204
 [4{/home/fabio.missagia/texlive/2026/texmf-dist/fonts/enc/dvips/cm-super/cm-sup
 er-ts1.enc}] [5] [6]
-Overfull \vbox (8.99426pt too high) detected at line 295
+Overfull \vbox (8.99426pt too high) detected at line 294
 [7]
-Overfull \vbox (12.69392pt too high) detected at line 330
+Overfull \hbox (21.68262pt too wide) in paragraph at lines 355--355
+ [][] 
 [8]
-Overfull \vbox (19.34888pt too high) detected at line 346
-[9 <./images/chain_latency.png>] [10 <./images/dsmem-distance.png>] [11 <./imag
-es/stride-smem.png> <./images/stride-dsmem-c2-d1.png> <./images/stride-l2.png> 
-<./images/stride-dram.png>] [12]
-Overfull \vbox (2.72116pt too high) detected at line 459
-[13] [14 <./images/loaded_latency.png>] [15]
+Overfull \vbox (12.69392pt too high) detected at line 389
+[9]
+Overfull \vbox (19.34888pt too high) detected at line 406
+[10 <./images/chain_latency.png>] [11 <./images/dsmem-distance.png>] [12 <./ima
+ges/stride-smem.png> <./images/stride-dsmem-c2-d1.png> <./images/stride-l2.png>
+ <./images/stride-dram.png>] [13]
+Overfull \vbox (2.72116pt too high) detected at line 519
+[14] [15 <./images/loaded_latency.png>] [16]
 
 Package caption Warning: Unused \captionsetup[sub] on input line 18.
 See the caption package documentation for explanation.
@@ -431,26 +434,27 @@ ome/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmmi9
 cm/cmss8.pfb></home/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/public/a
 msfonts/cm/cmss9.pfb></home/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/
 public/amsfonts/cm/cmsy10.pfb></home/fabio.missagia/texlive/2026/texmf-dist/fon
-ts/type1/public/amsfonts/cm/cmsy8.pfb></home/fabio.missagia/texlive/2026/texmf-
-dist/fonts/type1/public/amsfonts/cm/cmsy9.pfb></home/fabio.missagia/texlive/202
-6/texmf-dist/fonts/type1/public/cm-super/sfrm0800.pfb></home/fabio.missagia/tex
-live/2026/texmf-dist/fonts/type1/public/cm-super/sfsi0800.pfb></home/fabio.miss
-agia/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfsi0900.pfb></home/fa
-bio.missagia/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfsi1000.pfb><
-/home/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfso09
+ts/type1/public/amsfonts/cm/cmsy6.pfb></home/fabio.missagia/texlive/2026/texmf-
+dist/fonts/type1/public/amsfonts/cm/cmsy8.pfb></home/fabio.missagia/texlive/202
+6/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy9.pfb></home/fabio.missagia/tex
+live/2026/texmf-dist/fonts/type1/public/cm-super/sfrm0800.pfb></home/fabio.miss
+agia/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfsi0800.pfb></home/fa
+bio.missagia/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfsi0900.pfb><
+/home/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfsi10
 00.pfb></home/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/public/cm-supe
 r/sfss0600.pfb></home/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/public
 /cm-super/sfss0800.pfb></home/fabio.missagia/texlive/2026/texmf-dist/fonts/type
 1/public/cm-super/sfss0900.pfb></home/fabio.missagia/texlive/2026/texmf-dist/fo
 nts/type1/public/cm-super/sfss1000.pfb></home/fabio.missagia/texlive/2026/texmf
--dist/fonts/type1/public/cm-super/sfsx0800.pfb></home/fabio.missagia/texlive/20
-26/texmf-dist/fonts/type1/public/cm-super/sfsx0900.pfb></home/fabio.missagia/te
-xlive/2026/texmf-dist/fonts/type1/public/cm-super/sfsx1000.pfb></home/fabio.mis
-sagia/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfsx1200.pfb></home/f
-abio.missagia/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfsx1440.pfb>
-</home/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sftt0
-800.pfb></home/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/public/cm-sup
-er/sftt0900.pfb></home/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/publi
-c/cm-super/sftt1000.pfb>
-Output written on slides.pdf (15 pages, 963414 bytes).
+-dist/fonts/type1/public/cm-super/sfsx0600.pfb></home/fabio.missagia/texlive/20
+26/texmf-dist/fonts/type1/public/cm-super/sfsx0800.pfb></home/fabio.missagia/te
+xlive/2026/texmf-dist/fonts/type1/public/cm-super/sfsx0900.pfb></home/fabio.mis
+sagia/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfsx1000.pfb></home/f
+abio.missagia/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfsx1200.pfb>
+</home/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfsx1
+440.pfb></home/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/public/cm-sup
+er/sftt0800.pfb></home/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/publi
+c/cm-super/sftt0900.pfb></home/fabio.missagia/texlive/2026/texmf-dist/fonts/typ
+e1/public/cm-super/sftt1000.pfb>
+Output written on slides.pdf (16 pages, 988286 bytes).
 Transcript written on slides.log.

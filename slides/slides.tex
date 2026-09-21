@@ -241,20 +241,19 @@
 
   \vspace{0.6em}
   \textbf{Idea.} Exploit the one guarantee available: \emph{all blocks of a cluster are
-  co-scheduled in a single GPC}. So the SMs hosting one cluster are provably all
+  co-scheduled in a single GPC}. So the SMs inside one cluster are provably all
   in the \emph{same} GPC.
 
   \vspace{0.6em}
-  \textbf{Method.} A \emph{single} launch of 4 clusters $\times$ 12 blocks.
+  \textbf{Method.} Launch of 4 clusters $\times$ 12 blocks.
   \begin{itemize}\itemsep3pt
-    \item every block reads the \texttt{\%smid} register and reports the SM it
-          ran on and the cluster it belongs to
-    \item 52\,KB of shared memory per block forces one block per SM, so a
+    \item every block reads the \texttt{\%smid} register and reports the \textbf{SM it
+          ran on} and the \textbf{cluster it belongs to}
+    \item \textbf{52\,KB of shared memory per block} forces one block per SM, so a
           12-block cluster covers 12 \emph{distinct} SMs
-    \item cluster size 12 $=$ one GPC's SM count, so 4 clusters cover all 48 SMs
-          exactly once and \textbf{each cluster \emph{is} a GPC} --- read the
-          mapping off directly
-    \item tried many trials, but the result is always the same and all 48 SMs
+    \item cluster size 12 $=$ one GPC's SM count, so \textbf{4 clusters cover all 48 SMs}
+          exactly once and each cluster is a GPC
+    \item \textbf{tried many trials}, but the result is always the same and all 48 SMs
           are observed every time, so one launch is enough
   \end{itemize}
 
@@ -295,17 +294,70 @@
 \end{frame}
 
 % ============================================================ 7. latency
+% ============================================================ 6b. how the chase works
+\begin{frame}{How do we measure latency?}
+  \vspace{0.2em}
+  \footnotesize
+  A GPU is built to hide latency: a load does not stall the thread, this is called Memory-Level Parallelism.
+  
+  \textbf{The fix:} make each load depend on the result of the previous one, so that the thread cannot issue the next load until the previous one has completed. This is called a \textbf{dependent pointer chase}, or pChase.
+
+  \vspace{1.5em}
+  \begin{columns}[c]
+    \begin{column}{0.34\textwidth}
+      \centering
+      \begin{tikzpicture}[scale=0.5, every node/.style={font=\tiny}]
+        \node[anchor=south west, font=\scriptsize\bfseries] at (0,1.62) {dependent chase};
+        \foreach \i in {0,1,2,3}
+          \draw[fill=mygreen!35, draw=mygreen!80!black]
+                (\i*2.1,1.3-\i*0.3) rectangle (\i*2.1+2.0,1.54-\i*0.3);
+        \draw[<->, gray] (0,0.1) -- (8.3,0.1);
+        \node[gray, anchor=north, font=\tiny] at (4.15,-0.25)
+          {strictly serial: $4\times$ latency $\Rightarrow$ divide by 4 $\Rightarrow$ \textbf{latency}};
+      \end{tikzpicture}
+    \end{column}
+    \begin{column}{0.54\textwidth}
+      \centering
+      \mbox{\texttt{\textbf{idx = buf[idx];}}\quad\textcolor{gray}{\scriptsize the value loaded \emph{is} the next address}}
+
+      \vspace{0.3em}
+      \begin{tikzpicture}[scale=0.5, every node/.style={font=\scriptsize}]
+        \foreach \i/\v in {0/5, 1/0, 2/7, 3/6, 4/3, 5/2, 6/1, 7/4} {
+          \draw[fill=gray!8, draw=gray] (\i*1.45,0) rectangle (\i*1.45+1.3,0.9);
+          \node at (\i*1.45+0.65,0.45) {\texttt{\v}};
+          \node[idxgray, anchor=north, font=\tiny] at (\i*1.45+0.65,-0.05) {\i};
+        }
+        \node[anchor=east, gray, font=\tiny] at (-0.2,0.45) {\texttt{buf}};
+        % the walk 0 -> 5 -> 2 -> 7 -> 4 -> ...
+        \draw[->, thick, myred] (0.65,0.9)  to[out=48,in=132,looseness=0.45] (7.90,0.9);
+        \draw[->, thick, myred] (7.90,0.9)  to[out=132,in=48,looseness=0.75] (3.55,0.9);
+        \draw[->, thick, myred] (3.55,0.9)  to[out=48,in=132,looseness=0.35] (10.80,0.9);
+        \draw[->, thick, myred] (10.80,0.9) to[out=132,in=48,looseness=0.6] (6.45,0.9);
+      \end{tikzpicture}
+    \end{column}
+  \end{columns}
+  \vspace{0.2em}
+  \textbf{In addition:}
+  \vspace{-0.4em}
+  \scriptsize
+  \begin{itemize}\itemsep1pt
+    \item \textbf{Sattolo cycle:} \texttt{buf} is one random cycle over \emph{every} element:
+          no short loops, nothing to prefetch.
+    \item \textbf{steps:} how many dependent loads the timed loop performs. If far below the cycle length: no address is revisited.
+    \item \textbf{reps:} The whole kernel is launched many times ---
+        a drift across reps exposes a cold cache.
+    \item \textbf{Warm-up:} L1: one untimed lap to warm the cache; 
+    L2: a coalesced sweep \emph{after} the
+          kernel is loaded (lazy load flushes L2).
+  \end{itemize}
+\end{frame}
+
 \begin{frame}{Latency Benchmark -- Random pChase}
   \vspace{0.2em}
   \footnotesize
   Dependent random pointer chase, 16\,384 steps, one thread, median of 101 reps.
-  \vspace{-0.5em}
-  \begin{itemize}\itemsep0pt
-    \item \textbf{Sattolo cycle.} One random cycle over all elements: no short cycles, nothing for a prefetcher.
-    \item \textbf{Dependency defeats overlap.} Load $i{+}1$ needs the value of load $i$: pure latency, no MLP.
-  \end{itemize}
 
-  \vspace{0.2em}
+  \vspace{0.8em}
   \centering
   \begin{tabular}{lccc}
     \toprule
@@ -323,22 +375,18 @@
   \vspace{0.2em}
   {\tiny\color{gray} $^{\star}$ Luo et al., arXiv:2501.12084 --- Hopper H800, same p-chase method}
 
-  \vspace{0.2em}
+  \vspace{0.5em}
   \raggedright
-  \scriptsize
   \textbf{Why does SMEM via DSMEM cost 4 more cycles?} \texttt{map\_shared\_rank} returns a generic pointer, so the load compiles to \texttt{LD} (address space resolved by hardware on every access) instead of \texttt{LDS} (a plain shared-memory load).
 \end{frame}
+
 
 \begin{frame}{Latency Benchmark -- Random pChase}
   \vspace{0.2em}
   \footnotesize
   Dependent random pointer chase, 16\,384 steps, one thread, median of 101 reps.
-  \vspace{-0.5em}
-  \begin{itemize}\itemsep0pt
-    \item \textbf{Sattolo cycle.} One random cycle over all elements: no short cycles, nothing for a prefetcher.
-    \item \textbf{Dependency defeats overlap.} Load $i{+}1$ needs the value of load $i$: pure latency, no MLP.
-  \end{itemize}
 
+  \vspace{0.8em}
   \centering
   \begin{figure}
     \includegraphics[width=0.7\linewidth]{images/chain_latency.png}
