@@ -13,7 +13,7 @@
 // segments of the cycle (the timed pass continues where the warm-up stops),
 // so warming up does not turn this into an L2 measurement.
 
-#include "common.cuh"
+#include "../common.cuh"
 
 __global__ void gmem_chase(const unsigned* __restrict__ buf, unsigned start,
                            int warmup, int steps, Result* out) {

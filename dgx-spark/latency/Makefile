@@ -20,8 +20,8 @@ BINS := $(SRCS:.cu=)
 
 all: $(BINS)
 
-# Every program includes common.cuh, so a change there rebuilds all of them.
-%: %.cu common.cuh
+# Every program includes ../common.cuh, so a change there rebuilds all of them.
+%: %.cu ../common.cuh
 	$(NVCC) $(NVCCFLAGS) $(EXTRA) $< -o $@ 2>&1
 
 clean:

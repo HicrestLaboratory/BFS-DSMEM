@@ -1,14 +1,5 @@
-// common.cuh — code shared by the five latency microbenchmarks.
-//
-// Everything that is identical across the programs lives here, so that each
-// .cu file contains only the kernel it measures plus a short main(). Read this
-// file once; after that every program is a few dozen lines.
-//
-// The measurement technique is a DEPENDENT POINTER CHASE: a single thread
-// executes `idx = buf[idx]` in a loop. Each load's address is the previous
-// load's value, so the hardware cannot issue the next load before the current
-// one returns. The time per step is therefore the true load-to-use latency,
-// not hidden by memory-level parallelism.
+// common.cuh — code shared across dgx-spark/: error checking, %smid, and
+// the pointer-chase infrastructure used by the latency microbenchmarks.
 
 #pragma once
 
@@ -32,6 +23,13 @@
             exit(1);                                                         \
         }                                                                    \
     } while (0)
+
+// The SM this thread is executing on.
+__device__ __forceinline__ unsigned smid() {
+    unsigned s;
+    asm volatile("mov.u32 %0, %%smid;" : "=r"(s));
+    return s;
+}
 
 // Size of the shared-memory chase buffer, in 4-byte elements (16 KiB).
 // Small enough that any block can allocate it statically; large enough that
@@ -270,7 +268,7 @@ void print_header(int argc, char** argv, const Args& a, size_t n_elems,
     if (extra) fputs(extra, stdout);
     printf("benchmark,cluster_size,distance,mapped,block_size,steps,"
            "buffer_bytes,stride_bytes,seed,rep,cycles,ns,cycles_per_load,"
-           "ns_per_load,ghz,chasers,warp\n");
+           "ns_per_load,ghz,chasers,warp,reader,target,smid_reader,smid_target\n");
 }
 
 // One CSV row. The schema is identical for all programs; a program passes 0
@@ -278,16 +276,20 @@ void print_header(int argc, char** argv, const Args& a, size_t n_elems,
 // columns and they can all be loaded into one table. The last two columns
 // (chasing threads per block, and which warp this row is) matter only for
 // latency-many-threads.cu; single-thread programs leave them at 1 and 0.
+// reader/target are the cluster ranks involved (dsmem_matrix.cu); smid_* are
+// the physical SMs they landed on. Programs that do not use them pass the
+// defaults, so every file keeps the same columns.
 void print_row(const char* benchmark, int cluster_size, int distance,
                int mapped, int block_size, int steps, size_t buffer_bytes,
                int stride_bytes, int seed, int rep, const Result& r,
-               int chasers = 1, int warp = 0) {
+               int chasers = 1, int warp = 0, int reader = 0, int target = 0,
+               int smid_reader = -1, int smid_target = -1) {
     double cpl = (double)r.cycles / steps;
     double npl = (double)r.ns / steps;
-    printf("%s,%d,%d,%d,%d,%d,%zu,%d,%d,%d,%lld,%llu,%.4f,%.4f,%.4f,%d,%d\n",
+    printf("%s,%d,%d,%d,%d,%d,%zu,%d,%d,%d,%lld,%llu,%.4f,%.4f,%.4f,%d,%d,%d,%d,%d,%d\n",
            benchmark, cluster_size, distance, mapped, block_size, steps,
            buffer_bytes, stride_bytes, seed, rep, r.cycles, r.ns, cpl, npl,
-           cpl / npl, chasers, warp);
+           cpl / npl, chasers, warp, reader, target, smid_reader, smid_target);
 }
 
 // Value below which a fraction `q` of the (sorted) samples lie.

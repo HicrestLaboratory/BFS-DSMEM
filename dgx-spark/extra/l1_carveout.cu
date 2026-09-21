@@ -37,8 +37,7 @@
 #include <vector>
 #include <cuda_runtime.h>
 
-#define CK(c) do { cudaError_t e_ = (c); if (e_ != cudaSuccess) { \
-    printf("ERR %d %s\n", __LINE__, cudaGetErrorString(e_)); exit(1); } } while (0)
+#include "../common.cuh"  // CUDA_CHECK
 
 // A: dynamic-SMEM chase. useSmem touches the allocation so it is real.
 __global__ void chaseA(const unsigned* b, int steps, long long* o, int useSmem) {
@@ -83,8 +82,8 @@ static unsigned* make_buf(size_t kib, std::mt19937& rng) {
     std::iota(h.begin(), h.end(), 0u);
     for (size_t i = n - 1; i > 0; i--)
         std::swap(h[i], h[std::uniform_int_distribution<size_t>(0, i - 1)(rng)]);
-    unsigned* d; CK(cudaMalloc(&d, n * 4));
-    CK(cudaMemcpy(d, h.data(), n * 4, cudaMemcpyHostToDevice));
+    unsigned* d; CUDA_CHECK(cudaMalloc(&d, n * 4));
+    CUDA_CHECK(cudaMemcpy(d, h.data(), n * 4, cudaMemcpyHostToDevice));
     return d;
 }
 
@@ -95,7 +94,7 @@ static double median(std::vector<double>& v) {
 int main() {
     const int steps = 8192;
     std::mt19937 rng(11);
-    long long* cyc; CK(cudaMallocManaged(&cyc, sizeof(long long)));
+    long long* cyc; CUDA_CHECK(cudaMallocManaged(&cyc, sizeof(long long)));
 
     // -------- A. working-set sweep, smem = 0 vs 99 KiB --------
     {
@@ -104,14 +103,14 @@ int main() {
                                80, 96, 112, 128, 160, 192, 256, 384};
         std::vector<unsigned*> bufs;
         for (int k : ws) bufs.push_back(make_buf(k, rng));
-        int optin = 0; CK(cudaDeviceGetAttribute(&optin, cudaDevAttrMaxSharedMemoryPerBlockOptin, 0));
+        int optin = 0; CUDA_CHECK(cudaDeviceGetAttribute(&optin, cudaDevAttrMaxSharedMemoryPerBlockOptin, 0));
         printf("=== A. cycles/load vs working set, smem request 0 vs %d B ===\n", optin);
         printf("%-10s %18s %20s\n", "working", "smem=0 (max L1)", "smem=99KiB (min L1)");
         printf("%-10s %18s %20s\n", "set (KiB)", "cycles/load", "cycles/load");
         std::vector<double> resA[2];
         int cases[2] = {0, optin};
         for (int c = 0; c < 2; c++) {
-            CK(cudaFuncSetAttribute((void*)chaseA, cudaFuncAttributeMaxDynamicSharedMemorySize,
+            CUDA_CHECK(cudaFuncSetAttribute((void*)chaseA, cudaFuncAttributeMaxDynamicSharedMemorySize,
                                     std::max(cases[c], 1)));
             for (size_t k = 0; k < ws.size(); k++) {
                 std::vector<double> v;
@@ -119,9 +118,9 @@ int main() {
                     cudaLaunchConfig_t cfg = {};
                     cfg.gridDim = dim3(1, 1, 1); cfg.blockDim = dim3(32, 1, 1);
                     cfg.dynamicSmemBytes = std::max(cases[c], 1);
-                    CK(cudaLaunchKernelEx(&cfg, chaseA, (const unsigned*)bufs[k], steps, cyc,
+                    CUDA_CHECK(cudaLaunchKernelEx(&cfg, chaseA, (const unsigned*)bufs[k], steps, cyc,
                                           cases[c] > 0 ? 1 : 0));
-                    CK(cudaDeviceSynchronize());
+                    CUDA_CHECK(cudaDeviceSynchronize());
                     v.push_back((double)*cyc / steps);
                 }
                 resA[c].push_back(median(v));
@@ -143,14 +142,14 @@ int main() {
                " knee = first set above 2x base)\n");
         printf("%-22s %-14s %-12s\n", "carveout (% shared)", "L1 plateau KiB", "knee KiB");
         for (int pc : {0, 10, 25, 50, 75, 100}) {
-            CK(cudaFuncSetAttribute((void*)chaseB,
+            CUDA_CHECK(cudaFuncSetAttribute((void*)chaseB,
                                     cudaFuncAttributePreferredSharedMemoryCarveout, pc));
             double base = 0; int knee = -1, plateau = 0;
             for (size_t k = 0; k < ws.size(); k++) {
                 std::vector<double> v;
                 for (int r = 0; r < reps; r++) {
                     chaseB<<<1, 32>>>(bufs[k], steps, cyc);
-                    CK(cudaDeviceSynchronize());
+                    CUDA_CHECK(cudaDeviceSynchronize());
                     v.push_back((double)*cyc / steps);
                 }
                 double m = median(v);
@@ -171,10 +170,10 @@ int main() {
         for (int k : ws) bufs.push_back(make_buf(k, rng));
         printf("\n=== C. 8 KiB dynamic smem: default carveout vs explicit ===\n");
         printf("%-34s %-12s\n", "configuration", "L1 plateau KiB");
-        CK(cudaFuncSetAttribute((void*)chaseC, cudaFuncAttributeMaxDynamicSharedMemorySize, 8 * 1024));
+        CUDA_CHECK(cudaFuncSetAttribute((void*)chaseC, cudaFuncAttributeMaxDynamicSharedMemorySize, 8 * 1024));
         for (int pc : {-1, 10, 25, 50}) {                 // -1 = leave the default
             if (pc >= 0)
-                CK(cudaFuncSetAttribute((void*)chaseC,
+                CUDA_CHECK(cudaFuncSetAttribute((void*)chaseC,
                                         cudaFuncAttributePreferredSharedMemoryCarveout, pc));
             double base = 0; int plateau = 0;
             for (size_t k = 0; k < ws.size(); k++) {
@@ -183,8 +182,8 @@ int main() {
                     cudaLaunchConfig_t cfg = {};
                     cfg.gridDim = dim3(1, 1, 1); cfg.blockDim = dim3(32, 1, 1);
                     cfg.dynamicSmemBytes = 8 * 1024;
-                    CK(cudaLaunchKernelEx(&cfg, chaseC, (const unsigned*)bufs[k], steps, cyc));
-                    CK(cudaDeviceSynchronize());
+                    CUDA_CHECK(cudaLaunchKernelEx(&cfg, chaseC, (const unsigned*)bufs[k], steps, cyc));
+                    CUDA_CHECK(cudaDeviceSynchronize());
                     v.push_back((double)*cyc / steps);
                 }
                 double m = median(v);

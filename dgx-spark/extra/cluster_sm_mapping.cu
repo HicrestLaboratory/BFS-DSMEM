@@ -24,10 +24,10 @@
 #include <vector>
 #include <cuda_runtime.h>
 #include <cooperative_groups.h>
-namespace cg = cooperative_groups;
 
-#define CK(c) do { cudaError_t e_ = (c); if (e_ != cudaSuccess) { \
-    printf("ERR %d %s\n", __LINE__, cudaGetErrorString(e_)); exit(1); } } while (0)
+#include "../common.cuh"  // CUDA_CHECK
+
+namespace cg = cooperative_groups;
 
 // Each block reports the SM it is executing on, indexed by its global block id.
 __global__ void record(unsigned* smids, unsigned* ranks, int spin) {
@@ -46,8 +46,8 @@ struct Verdict { int clusters; int sharing; int minDistinct; int maxDistinct; };
 
 static Verdict probe(int clusterSize, int grid, int blockDim_, int smem, int spin) {
     unsigned *smids, *ranks;
-    CK(cudaMallocManaged(&smids, grid * sizeof(unsigned)));
-    CK(cudaMallocManaged(&ranks, grid * sizeof(unsigned)));
+    CUDA_CHECK(cudaMallocManaged(&smids, grid * sizeof(unsigned)));
+    CUDA_CHECK(cudaMallocManaged(&ranks, grid * sizeof(unsigned)));
     for (int i = 0; i < grid; i++) { smids[i] = 0xFFFFFFFFu; ranks[i] = 0xFFFFFFFFu; }
 
     cudaLaunchConfig_t cfg = {};
@@ -58,8 +58,8 @@ static Verdict probe(int clusterSize, int grid, int blockDim_, int smem, int spi
     a[0].id = cudaLaunchAttributeClusterDimension;
     a[0].val.clusterDim.x = clusterSize; a[0].val.clusterDim.y = 1; a[0].val.clusterDim.z = 1;
     cfg.attrs = a; cfg.numAttrs = 1;
-    CK(cudaLaunchKernelEx(&cfg, record, smids, ranks, spin));
-    CK(cudaDeviceSynchronize());
+    CUDA_CHECK(cudaLaunchKernelEx(&cfg, record, smids, ranks, spin));
+    CUDA_CHECK(cudaDeviceSynchronize());
 
     // group blocks by cluster id and look for repeated SMs inside a cluster
     Verdict v{0, 0, 1 << 30, 0};
@@ -73,13 +73,13 @@ static Verdict probe(int clusterSize, int grid, int blockDim_, int smem, int spi
         v.minDistinct = std::min(v.minDistinct, (int)distinct.size());
         v.maxDistinct = std::max(v.maxDistinct, (int)distinct.size());
     }
-    CK(cudaFree(smids)); CK(cudaFree(ranks));
+    CUDA_CHECK(cudaFree(smids)); CUDA_CHECK(cudaFree(ranks));
     return v;
 }
 
 int main() {
-    CK(cudaFuncSetAttribute((void*)record, cudaFuncAttributeNonPortableClusterSizeAllowed, 1));
-    cudaDeviceProp p; CK(cudaGetDeviceProperties(&p, 0));
+    CUDA_CHECK(cudaFuncSetAttribute((void*)record, cudaFuncAttributeNonPortableClusterSizeAllowed, 1));
+    cudaDeviceProp p; CUDA_CHECK(cudaGetDeviceProperties(&p, 0));
     printf("# %s, %d SMs, 12 SMs per GPC\n", p.name, p.multiProcessorCount);
     printf("# A cluster's ranks share an SM only if 'distinct SMs' < cluster size.\n\n");
 
@@ -107,7 +107,7 @@ int main() {
         {4, 256, 0}, {4, 256, 32768}, {12, 128, 0}, {12, 256, 51200}, {2, 1024, 0}};
     for (auto& c : cases) {
         int grid = 96; if (grid % c.cs) grid = (grid / c.cs) * c.cs;
-        if (c.smem) CK(cudaFuncSetAttribute((void*)record,
+        if (c.smem) CUDA_CHECK(cudaFuncSetAttribute((void*)record,
                         cudaFuncAttributeMaxDynamicSharedMemorySize, c.smem));
         Verdict v = probe(c.cs, grid, c.bd, c.smem, 2000000);
         printf("%12d %8d %8d %10d %12s %16d\n", c.cs, c.bd, c.smem, v.clusters,

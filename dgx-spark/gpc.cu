@@ -20,32 +20,14 @@
 // Run:   ./gpc [trials=200]
 
 #include <cooperative_groups.h>
-#include <cuda_runtime.h>
 #include <algorithm>
-#include <cstdio>
-#include <cstdlib>
 #include <map>
 #include <set>
 #include <vector>
 
+#include "common.cuh"
+
 namespace cg = cooperative_groups;
-
-#define CUDA_CHECK(call)                                                     \
-    do {                                                                     \
-        cudaError_t err_ = (call);                                           \
-        if (err_ != cudaSuccess) {                                           \
-            fprintf(stderr, "CUDA error %s at %s:%d: %s\n", #call, __FILE__, \
-                    __LINE__, cudaGetErrorString(err_));                     \
-            exit(1);                                                         \
-        }                                                                    \
-    } while (0)
-
-// The SM this block is executing on.
-__device__ __forceinline__ unsigned smid() {
-    unsigned s;
-    asm volatile("mov.u32 %0, %%smid;" : "=r"(s));
-    return s;
-}
 
 // Every block reports its SM id and its cluster id. The dynamic shared memory
 // request (sized by the host) is what forces one block per SM, so that a

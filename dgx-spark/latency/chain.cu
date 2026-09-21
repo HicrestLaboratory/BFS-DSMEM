@@ -15,7 +15,7 @@
 // Build: make chain
 // Run:   ./chain --buffer-kib 64 [--reps 101] [--steps 16384] [--seed 42] [--warmup 1]
 
-#include "common.cuh"
+#include "../common.cuh"
 
 __global__ void gmem_chase(const unsigned* __restrict__ buf, unsigned start,
                            int warmup, int steps, Result* out) {

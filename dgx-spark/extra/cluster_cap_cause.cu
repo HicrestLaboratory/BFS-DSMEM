@@ -25,10 +25,10 @@
 #include <cstdlib>
 #include <cuda_runtime.h>
 #include <cooperative_groups.h>
-namespace cg = cooperative_groups;
 
-#define CK(c) do { cudaError_t e_ = (c); if (e_ != cudaSuccess) { \
-    printf("ERR %d %s\n", __LINE__, cudaGetErrorString(e_)); exit(1); } } while (0)
+#include "../common.cuh"  // CUDA_CHECK
+
+namespace cg = cooperative_groups;
 
 // The clustered kernel under test (sections 1-2).
 __global__ void clus(int* o) { cg::cluster_group c = cg::this_cluster();
@@ -54,13 +54,13 @@ static int clusterBlocks(int bd, int cs) {
     a[0].id = cudaLaunchAttributeClusterDimension;
     a[0].val.clusterDim.x = cs; a[0].val.clusterDim.y = 1; a[0].val.clusterDim.z = 1;
     cfg.attrs = a; cfg.numAttrs = 1;
-    int n = 0; CK(cudaOccupancyMaxActiveClusters(&n, (void*)clus, &cfg));
+    int n = 0; CUDA_CHECK(cudaOccupancyMaxActiveClusters(&n, (void*)clus, &cfg));
     return n * cs;
 }
 
 int main() {
-    CK(cudaFuncSetAttribute((void*)clus, cudaFuncAttributeNonPortableClusterSizeAllowed, 1));
-    cudaFuncAttributes fa; CK(cudaFuncGetAttributes(&fa, (void*)clus));
+    CUDA_CHECK(cudaFuncSetAttribute((void*)clus, cudaFuncAttributeNonPortableClusterSizeAllowed, 1));
+    cudaFuncAttributes fa; CUDA_CHECK(cudaFuncGetAttributes(&fa, (void*)clus));
     printf("cluster kernel: %d regs, %zu B static shared memory\n",
            fa.numRegs, fa.sharedSizeBytes);
 
@@ -73,14 +73,14 @@ int main() {
         a[0].id = cudaLaunchAttributeClusterDimension;
         a[0].val.clusterDim.x = cs; a[0].val.clusterDim.y = 1; a[0].val.clusterDim.z = 1;
         cfg.attrs = a; cfg.numAttrs = 1;
-        int n = 0; CK(cudaOccupancyMaxActiveClusters(&n, (void*)clus, &cfg));
+        int n = 0; CUDA_CHECK(cudaOccupancyMaxActiveClusters(&n, (void*)clus, &cfg));
         printf("%12d %10d %14d\n", cs, n, n * cs);
     }
 
     printf("\n=== 2. A hidden shared-memory reservation? (carveout sweep) ===\n");
     printf("%28s %16s\n", "carveout (% toward shared)", "clustered blocks");
     for (int pc : {0, 10, 25, 50, 100}) {
-        CK(cudaFuncSetAttribute((void*)clus, cudaFuncAttributePreferredSharedMemoryCarveout, pc));
+        CUDA_CHECK(cudaFuncSetAttribute((void*)clus, cudaFuncAttributePreferredSharedMemoryCarveout, pc));
         printf("%28d %16d\n", pc, clusterBlocks(64, 4));
     }
 
@@ -91,16 +91,16 @@ int main() {
         {"+ cluster.sync()", (void*)k_sync}};
     printf("%-30s %10s %12s\n", "kernel", "blocks/SM", "device-wide");
     for (auto& en : ks) {
-        int b = 0; CK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&b, en.fn, 64, 0));
+        int b = 0; CUDA_CHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&b, en.fn, 64, 0));
         printf("%-30s %10d %12d\n", en.name, b, b * 48);
     }
 
     printf("\n=== 4. The NonPortableClusterSizeAllowed attribute? ===\n");
     int b = 0;
-    CK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&b, (void*)k_attr, 64, 0));
+    CUDA_CHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&b, (void*)k_attr, 64, 0));
     printf("before opt-in: %2d blocks/SM (%d device-wide)\n", b, b * 48);
-    CK(cudaFuncSetAttribute((void*)k_attr, cudaFuncAttributeNonPortableClusterSizeAllowed, 1));
-    CK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&b, (void*)k_attr, 64, 0));
+    CUDA_CHECK(cudaFuncSetAttribute((void*)k_attr, cudaFuncAttributeNonPortableClusterSizeAllowed, 1));
+    CUDA_CHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&b, (void*)k_attr, 64, 0));
     printf("after  opt-in: %2d blocks/SM (%d device-wide)\n", b, b * 48);
     return 0;
 }

@@ -23,53 +23,16 @@
 // Build: nvcc -O3 -arch=sm_121 latency-original-malloc.cu -o latency-original-malloc
 // Run:   ./latency-original-malloc [reps=101] [steps=16384]
 
-#include <cuda_runtime.h>
 #include <sys/mman.h>
 #include <algorithm>
 #include <cstdint>
-#include <cstdio>
-#include <cstdlib>
 #include <cstring>
 #include <functional>
 #include <numeric>
 #include <random>
 #include <vector>
 
-#define CUDA_CHECK(call)                                                     \
-    do {                                                                     \
-        cudaError_t err_ = (call);                                           \
-        if (err_ != cudaSuccess) {                                           \
-            fprintf(stderr, "CUDA error %s at %s:%d: %s\n", #call, __FILE__, \
-                    __LINE__, cudaGetErrorString(err_));                     \
-            exit(1);                                                         \
-        }                                                                    \
-    } while (0)
-
-struct Result {
-    long long cycles;
-    unsigned long long ns;
-    unsigned sink;  // defeats dead-code elimination of the chase
-};
-
-__device__ __forceinline__ unsigned long long globaltimer() {
-    unsigned long long t;
-    asm volatile("mov.u64 %0, %%globaltimer;" : "=l"(t));
-    return t;
-}
-
-// Dependent chase: each load's address is the previous load's value.
-__device__ __forceinline__ void chase(const unsigned* buf, unsigned start,
-                                      int steps, Result* out) {
-    unsigned idx = start;
-    long long c0 = clock64();
-    unsigned long long g0 = globaltimer();
-    for (int i = 0; i < steps; i++) idx = buf[idx];
-    long long c1 = clock64();
-    unsigned long long g1 = globaltimer();
-    out->cycles = c1 - c0;
-    out->ns = g1 - g0;
-    out->sink = idx;
-}
+#include "../../common.cuh"  // CUDA_CHECK, Result, globaltimer(), chase()
 
 __global__ void gmem_chase(const unsigned* __restrict__ buf, unsigned start,
                            int steps, Result* out) {
@@ -84,17 +47,6 @@ __global__ void warm_up(const unsigned* __restrict__ buf, size_t n,
          i += (size_t)gridDim.x * blockDim.x)
         s += buf[i];
     if (s == 0xDEADBEEFull) *sink = s;  // never true; keeps the sweep alive
-}
-
-// Sattolo's algorithm: a single cycle visiting every element exactly once,
-// in random order — defeats any prefetcher and guarantees no short cycles.
-void make_cycle(std::vector<unsigned>& p, std::mt19937& rng) {
-    size_t n = p.size();
-    std::iota(p.begin(), p.end(), 0u);
-    for (size_t i = n - 1; i > 0; i--) {
-        std::uniform_int_distribution<size_t> d(0, i - 1);
-        std::swap(p[i], p[d(rng)]);
-    }
 }
 
 struct Stats {

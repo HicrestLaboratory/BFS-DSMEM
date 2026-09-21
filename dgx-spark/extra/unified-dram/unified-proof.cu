@@ -21,8 +21,7 @@
 #include <cstring>
 #include <cuda_runtime.h>
 
-#define CK(c) do { cudaError_t e_ = (c); if (e_ != cudaSuccess) { \
-    printf("ERR %d %s\n", __LINE__, cudaGetErrorString(e_)); exit(1); } } while (0)
+#include "../../common.cuh"  // CUDA_CHECK
 
 // Reads and writes a plain host malloc() pointer directly.
 __global__ void touch_host_ptr(int* p, int* out) {
@@ -39,7 +38,7 @@ static long meminfo(const char* key) {
 }
 
 int main() {
-    cudaDeviceProp p; CK(cudaGetDeviceProperties(&p, 0));
+    cudaDeviceProp p; CUDA_CHECK(cudaGetDeviceProperties(&p, 0));
     printf("=== 1. Is the GPU integrated (shares host memory) or discrete? ===\n");
     printf("  integrated                   : %d   %s\n", p.integrated,
            p.integrated ? "<- shares system memory with the CPU" : "<- has its own VRAM");
@@ -60,19 +59,19 @@ int main() {
     printf("\n=== 3. Does a cudaMalloc consume *system* RAM? ===\n");
     long before = meminfo("MemAvailable");
     size_t bytes = 8ull << 30;
-    void* d; CK(cudaMalloc(&d, bytes));
-    CK(cudaMemset(d, 1, bytes));                    // fault the pages in
+    void* d; CUDA_CHECK(cudaMalloc(&d, bytes));
+    CUDA_CHECK(cudaMemset(d, 1, bytes));                    // fault the pages in
     long after = meminfo("MemAvailable");
     printf("  MemAvailable before cudaMalloc(8 GiB): %.1f GiB\n", before / 1048576.0);
     printf("  MemAvailable after                   : %.1f GiB\n", after / 1048576.0);
     printf("  -> system RAM consumed by the GPU allocation: %.1f GiB\n",
            (before - after) / 1048576.0);
-    CK(cudaFree(d));
+    CUDA_CHECK(cudaFree(d));
 
     printf("\n=== 4. Can the GPU dereference a plain malloc() pointer? ===\n");
     int* hp = (int*)malloc(sizeof(int));            // ordinary host heap, never registered
     *hp = 1;
-    int* out; CK(cudaMallocManaged(&out, sizeof(int)));
+    int* out; CUDA_CHECK(cudaMallocManaged(&out, sizeof(int)));
     touch_host_ptr<<<1, 32>>>(hp, out);
     cudaError_t e = cudaDeviceSynchronize();
     if (e == cudaSuccess)
@@ -81,6 +80,6 @@ int main() {
     else
         printf("  failed: %s\n", cudaGetErrorString(e));
     free(hp);
-    CK(cudaFree(out));
+    CUDA_CHECK(cudaFree(out));
     return 0;
 }

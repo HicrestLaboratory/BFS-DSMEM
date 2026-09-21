@@ -26,10 +26,10 @@
 #include <string>
 #include <cuda_runtime.h>
 #include <cooperative_groups.h>
-namespace cg = cooperative_groups;
 
-#define CK(c) do { cudaError_t e_ = (c); if (e_ != cudaSuccess) { \
-    printf("ERR %d %s\n", __LINE__, cudaGetErrorString(e_)); exit(1); } } while (0)
+#include "../common.cuh"  // CUDA_CHECK
+
+namespace cg = cooperative_groups;
 
 __global__ void rendezvous(int* arrived, int* allSaw, int target, long long budget) {
     if (threadIdx.x == 0) {
@@ -43,7 +43,7 @@ __global__ void rendezvous(int* arrived, int* allSaw, int target, long long budg
 
 static bool test(int blocks, int bd, int clusterSize) {
     int *arr, *saw;
-    CK(cudaMallocManaged(&arr, sizeof(int))); CK(cudaMallocManaged(&saw, sizeof(int)));
+    CUDA_CHECK(cudaMallocManaged(&arr, sizeof(int))); CUDA_CHECK(cudaMallocManaged(&saw, sizeof(int)));
     *arr = 0; *saw = 0;
     const long long budget = 2000000000LL;          // ~0.8 s at 2.4 GHz
     cudaError_t le;
@@ -60,7 +60,7 @@ static bool test(int blocks, int bd, int clusterSize) {
         le = cudaLaunchKernelEx(&cfg, rendezvous, arr, saw, blocks, budget);
     }
     if (le != cudaSuccess) { cudaGetLastError(); cudaFree(arr); cudaFree(saw); return false; }
-    CK(cudaDeviceSynchronize());
+    CUDA_CHECK(cudaDeviceSynchronize());
     bool ok = (*saw == blocks);
     cudaFree(arr); cudaFree(saw);
     return ok;
@@ -74,8 +74,8 @@ static int maxResident(int bd, int cs, int hi) {
 }
 
 int main() {
-    cudaDeviceProp p; CK(cudaGetDeviceProperties(&p, 0));
-    CK(cudaFuncSetAttribute((void*)rendezvous,
+    cudaDeviceProp p; CUDA_CHECK(cudaGetDeviceProperties(&p, 0));
+    CUDA_CHECK(cudaFuncSetAttribute((void*)rendezvous,
                             cudaFuncAttributeNonPortableClusterSizeAllowed, 1));
 
     printf("=== A. Occupancy API: unclustered vs clustered, by block size ===\n");
@@ -84,7 +84,7 @@ int main() {
     printf("%9s | %-22s | %6s %6s %6s %6s %6s\n", "",
            "blocks/SM  device-wide", "cs=1", "cs=2", "cs=4", "cs=6", "cs=12");
     for (int bd : {32, 64, 128, 256, 512, 1024}) {
-        int b = 0; CK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&b, (void*)rendezvous, bd, 0));
+        int b = 0; CUDA_CHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&b, (void*)rendezvous, bd, 0));
         printf("%9d | %9d %12d |", bd, b, b * p.multiProcessorCount);
         for (int cs : {1, 2, 4, 6, 12}) {
             cudaLaunchConfig_t cfg = {};
@@ -108,7 +108,7 @@ int main() {
             int meas = maxResident(bd, cs, 1400);
             int api;
             if (cs <= 1) {
-                int b; CK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&b, (void*)rendezvous, bd, 0));
+                int b; CUDA_CHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&b, (void*)rendezvous, bd, 0));
                 api = b * p.multiProcessorCount;
             } else {
                 cudaLaunchConfig_t cfg = {};
@@ -117,7 +117,7 @@ int main() {
                 a[0].id = cudaLaunchAttributeClusterDimension;
                 a[0].val.clusterDim.x = cs; a[0].val.clusterDim.y = 1; a[0].val.clusterDim.z = 1;
                 cfg.attrs = a; cfg.numAttrs = 1;
-                int n; CK(cudaOccupancyMaxActiveClusters(&n, (void*)rendezvous, &cfg));
+                int n; CUDA_CHECK(cudaOccupancyMaxActiveClusters(&n, (void*)rendezvous, &cfg));
                 api = n * cs;
             }
             printf("%9d %10s %12d %14d\n", bd,
@@ -129,7 +129,7 @@ int main() {
     // fits per SM, and cluster sizes that do not divide the 12 SMs of a GPC
     // strand the remainder (a cluster cannot span GPCs).
     printf("\n=== C. Occupancy API: clustered blocks vs shared memory (blockDim 128) ===\n");
-    CK(cudaFuncSetAttribute((void*)rendezvous,
+    CUDA_CHECK(cudaFuncSetAttribute((void*)rendezvous,
                             cudaFuncAttributeMaxDynamicSharedMemorySize, 101376));
     printf("%12s | %6s %6s %6s %6s %6s   device-wide blocks\n",
            "smem/block", "cs=1", "cs=2", "cs=4", "cs=8", "cs=12");

@@ -22,7 +22,7 @@
 // Run:   ./l1 [--buffer-bytes N (default 32768)]
 //             [--reps 101] [--steps 16384] [--seed 42] [--warmup 1]
 
-#include "common.cuh"
+#include "../common.cuh"
 
 // A single thread chases; the block is one warp so nothing else competes.
 __global__ void gmem_chase(const unsigned* __restrict__ buf, unsigned start,

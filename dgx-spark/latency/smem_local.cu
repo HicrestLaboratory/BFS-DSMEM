@@ -7,7 +7,7 @@
 // Run:   ./smem_local [--reps 101] [--steps 16384] [--seed 42] [--warmup 1]
 //                     [--block-size 128]
 
-#include "common.cuh"
+#include "../common.cuh"
 
 // Every thread helps copy the permutation into shared memory; then thread 0
 // alone chases it. The other threads just wait at the end of the block.

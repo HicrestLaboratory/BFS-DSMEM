@@ -19,8 +19,7 @@
 #include <cstdlib>
 #include <cuda_runtime.h>
 
-#define CK(c) do { cudaError_t e_ = (c); if (e_ != cudaSuccess) { \
-    printf("ERR %d %s\n", __LINE__, cudaGetErrorString(e_)); exit(1); } } while (0)
+#include "../common.cuh"  // CUDA_CHECK
 
 // Tiny kernel: minimal registers, no shared memory. The guard on
 // threadIdx.x == 1023 is never true at the block sizes used for the sweep but
@@ -42,11 +41,11 @@ __global__ void fat(float* o, int n) {
 }
 
 int main() {
-    cudaDeviceProp p; CK(cudaGetDeviceProperties(&p, 0));
+    cudaDeviceProp p; CUDA_CHECK(cudaGetDeviceProperties(&p, 0));
     printf("=== Hardware caps (per SM) ===\n");
     printf("  maxThreadsPerMultiProcessor : %d  (= %d warps)\n",
            p.maxThreadsPerMultiProcessor, p.maxThreadsPerMultiProcessor / 32);
-    int mb = 0; CK(cudaDeviceGetAttribute(&mb, cudaDevAttrMaxBlocksPerMultiprocessor, 0));
+    int mb = 0; CUDA_CHECK(cudaDeviceGetAttribute(&mb, cudaDevAttrMaxBlocksPerMultiprocessor, 0));
     printf("  maxBlocksPerMultiprocessor  : %d\n", mb);
     printf("  regsPerMultiprocessor       : %d\n", p.regsPerMultiprocessor);
     printf("  sharedMemPerMultiprocessor  : %zu B\n", p.sharedMemPerMultiprocessor);
@@ -60,7 +59,7 @@ int main() {
     printf("%10s %8s %10s %12s %14s %s\n",
            "blockDim", "warps", "blocks/SM", "warps/SM", "occupancy", "device-wide blocks");
     for (int bd : {32, 64, 128, 256, 512, 1024}) {
-        int n = 0; CK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&n, (void*)tiny, bd, 0));
+        int n = 0; CUDA_CHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&n, (void*)tiny, bd, 0));
         int warps = bd / 32;
         printf("%10d %8d %10d %12d %13.0f%% %d\n", bd, warps, n, n * warps,
                100.0 * n * warps * 32 / p.maxThreadsPerMultiProcessor,
@@ -70,17 +69,17 @@ int main() {
     printf("\n=== Same kernel, varying dynamic shared memory (blockDim 128) ===\n");
     printf("%14s %10s %s\n", "smem/block", "blocks/SM", "device-wide blocks");
     for (int sm : {0, 8 * 1024, 16 * 1024, 32 * 1024, 50 * 1024}) {
-        int n = 0; CK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&n, (void*)tiny, 128, sm));
+        int n = 0; CUDA_CHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&n, (void*)tiny, 128, sm));
         printf("%14d %10d %d\n", sm, n, n * p.multiProcessorCount);
     }
     printf("(50 KiB gives 0: the default per-block shared-memory limit is 48 KiB"
            " unless the kernel opts in)\n");
 
-    cudaFuncAttributes fa; CK(cudaFuncGetAttributes(&fa, (void*)fat));
+    cudaFuncAttributes fa; CUDA_CHECK(cudaFuncGetAttributes(&fa, (void*)fat));
     printf("\n=== Register pressure (fat kernel uses %d regs/thread) ===\n", fa.numRegs);
     printf("%10s %10s %s\n", "blockDim", "blocks/SM", "device-wide blocks");
     for (int bd : {32, 128, 256}) {
-        int n = 0; CK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&n, (void*)fat, bd, 0));
+        int n = 0; CUDA_CHECK(cudaOccupancyMaxActiveBlocksPerMultiprocessor(&n, (void*)fat, bd, 0));
         printf("%10d %10d %d\n", bd, n, n * p.multiProcessorCount);
     }
     return 0;

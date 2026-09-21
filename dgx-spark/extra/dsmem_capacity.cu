@@ -24,10 +24,10 @@
 #include <algorithm>
 #include <cuda_runtime.h>
 #include <cooperative_groups.h>
-namespace cg = cooperative_groups;
 
-#define CK(c) do { cudaError_t e_ = (c); if (e_ != cudaSuccess) { \
-    printf("ERR %d %s\n", __LINE__, cudaGetErrorString(e_)); exit(1); } } while (0)
+#include "../common.cuh"  // CUDA_CHECK
+
+namespace cg = cooperative_groups;
 
 // Each rank fills its whole dynamic SMEM extent with a rank-dependent pattern,
 // then rank 0 reads every remote extent back and validates it.
@@ -56,9 +56,9 @@ __global__ void fill_and_check(unsigned nWords, int* ok, unsigned* smids) {
 }
 
 static bool tryLaunch(int cs, int smemBytes, int* d_ok, unsigned* d_smids, bool verify) {
-    CK(cudaFuncSetAttribute((void*)fill_and_check,
+    CUDA_CHECK(cudaFuncSetAttribute((void*)fill_and_check,
                             cudaFuncAttributeMaxDynamicSharedMemorySize, smemBytes));
-    CK(cudaMemset(d_ok, 0, sizeof(int)));
+    CUDA_CHECK(cudaMemset(d_ok, 0, sizeof(int)));
     cudaLaunchConfig_t cfg = {};
     cfg.gridDim = dim3(cs, 1, 1);
     cfg.blockDim = dim3(256, 1, 1);
@@ -71,25 +71,25 @@ static bool tryLaunch(int cs, int smemBytes, int* d_ok, unsigned* d_smids, bool 
                                         (unsigned)(smemBytes / sizeof(unsigned)), d_ok, d_smids);
     cudaError_t se = cudaDeviceSynchronize();
     if (le != cudaSuccess || se != cudaSuccess) { cudaGetLastError(); return false; }
-    if (verify) { int h = 0; CK(cudaMemcpy(&h, d_ok, sizeof(int), cudaMemcpyDeviceToHost)); return h == 0; }
+    if (verify) { int h = 0; CUDA_CHECK(cudaMemcpy(&h, d_ok, sizeof(int), cudaMemcpyDeviceToHost)); return h == 0; }
     return true;
 }
 
 int main() {
     int perSM = 0, perBlockOptin = 0, perBlockDefault = 0;
-    CK(cudaDeviceGetAttribute(&perSM, cudaDevAttrMaxSharedMemoryPerMultiprocessor, 0));
-    CK(cudaDeviceGetAttribute(&perBlockOptin, cudaDevAttrMaxSharedMemoryPerBlockOptin, 0));
-    CK(cudaDeviceGetAttribute(&perBlockDefault, cudaDevAttrMaxSharedMemoryPerBlock, 0));
+    CUDA_CHECK(cudaDeviceGetAttribute(&perSM, cudaDevAttrMaxSharedMemoryPerMultiprocessor, 0));
+    CUDA_CHECK(cudaDeviceGetAttribute(&perBlockOptin, cudaDevAttrMaxSharedMemoryPerBlockOptin, 0));
+    CUDA_CHECK(cudaDeviceGetAttribute(&perBlockDefault, cudaDevAttrMaxSharedMemoryPerBlock, 0));
     printf("=== Shared memory limits ===\n");
     printf("  per SM              : %6d B (%.1f KiB)\n", perSM, perSM / 1024.0);
     printf("  per block, default  : %6d B (%.1f KiB)\n", perBlockDefault, perBlockDefault / 1024.0);
     printf("  per block, opt-in   : %6d B (%.1f KiB)\n", perBlockOptin, perBlockOptin / 1024.0);
 
-    CK(cudaFuncSetAttribute((void*)fill_and_check,
+    CUDA_CHECK(cudaFuncSetAttribute((void*)fill_and_check,
                             cudaFuncAttributeNonPortableClusterSizeAllowed, 1));
     int* d_ok; unsigned* d_smids;
-    CK(cudaMalloc(&d_ok, sizeof(int)));
-    CK(cudaMallocManaged(&d_smids, 16 * sizeof(unsigned)));
+    CUDA_CHECK(cudaMalloc(&d_ok, sizeof(int)));
+    CUDA_CHECK(cudaMallocManaged(&d_smids, 16 * sizeof(unsigned)));
 
     printf("\n=== Max dynamic SMEM/block that still launches, per cluster size ===\n");
     printf("(binary search; VERIFIED = rank 0 read back every peer's full extent)\n");
@@ -112,20 +112,20 @@ int main() {
 
     printf("\n=== Does maximising SMEM cost cluster size? ===\n");
     for (int smem : {0, 32 * 1024, 50 * 1024, 64 * 1024, perBlockOptin}) {
-        CK(cudaFuncSetAttribute((void*)fill_and_check,
+        CUDA_CHECK(cudaFuncSetAttribute((void*)fill_and_check,
                                 cudaFuncAttributeMaxDynamicSharedMemorySize, smem));
         cudaLaunchConfig_t cfg = {};
         cfg.gridDim = dim3(1, 1, 1);
         cfg.blockDim = dim3(256, 1, 1);
         cfg.dynamicSmemBytes = smem;
         int occ = 0;
-        CK(cudaOccupancyMaxPotentialClusterSize(&occ, (void*)fill_and_check, &cfg));
+        CUDA_CHECK(cudaOccupancyMaxPotentialClusterSize(&occ, (void*)fill_and_check, &cfg));
         int maxOk = 0;
         for (int cs = 1; cs <= 12; cs++)
             if (tryLaunch(cs, smem, d_ok, d_smids, false)) maxOk = cs;
         printf("  smem/block=%6d B -> occupancy says %2d, actually launches up to %2d"
                " (aggregate %.1f KiB)\n", smem, occ, maxOk, (double)smem * maxOk / 1024.0);
     }
-    CK(cudaFree(d_ok)); CK(cudaFree(d_smids));
+    CUDA_CHECK(cudaFree(d_ok)); CUDA_CHECK(cudaFree(d_smids));
     return 0;
 }
