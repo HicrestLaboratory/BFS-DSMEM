@@ -241,27 +241,31 @@
 
   \vspace{0.6em}
   \textbf{Idea.} Exploit the one guarantee available: \emph{all blocks of a cluster are
-  co-scheduled in a single GPC}. So two SMs seen hosting blocks of the \emph{same}
-  cluster are provably in the \emph{same} GPC.
+  co-scheduled in a single GPC}. So the SMs hosting one cluster are provably all
+  in the \emph{same} GPC.
 
   \vspace{0.6em}
-  \textbf{Method.}
+  \textbf{Method.} A \emph{single} launch of 4 clusters $\times$ 12 blocks.
   \begin{itemize}\itemsep3pt
-    \item every block reads the \texttt{\%smid} register and reports the SM it ran on;
-    \item \textbf{union-find} over the co-occurrences --- the connected components
-          \emph{are} the GPCs;
-    \item 300 trials, until all 48 SMs have been observed;
-    \item 52\,KB of shared memory per block forces one block per SM, so a 12-block
-          cluster is guaranteed to cover 12 \emph{distinct} SMs.
+    \item every block reads the \texttt{\%smid} register and reports the SM it
+          ran on and the cluster it belongs to
+    \item 52\,KB of shared memory per block forces one block per SM, so a
+          12-block cluster covers 12 \emph{distinct} SMs
+    \item cluster size 12 $=$ one GPC's SM count, so 4 clusters cover all 48 SMs
+          exactly once and \textbf{each cluster \emph{is} a GPC} --- read the
+          mapping off directly
+    \item tried many trials, but the result is always the same and all 48 SMs
+          are observed every time, so one launch is enough
   \end{itemize}
 
 \end{frame}
 
 % ============================================================ 5b. GPC result
 \begin{frame}{GPC topology: 4 GPCs $\times$ 12 SMs}
-  \vspace{0.7em}
-  \centering
   \footnotesize
+  \textbf{Example:}\vspace{-0.3em}
+
+  \centering
   \begin{tabular}{ll}
     \toprule
     \textbf{GPC} & \textbf{SM ids} \\
@@ -273,22 +277,21 @@
     \bottomrule
   \end{tabular}
 
-  \vspace{0.1em}
   \raggedright
   \footnotesize
-  \textbf{Derived and verified:}
-  \begin{itemize}\itemsep1pt
+  \vspace{0.2em}
+  \textbf{Derived and verified:}\vspace{-0.3em}
+  \begin{itemize}\itemsep0pt
     \item \texttt{TPC = smid/2}, \quad \texttt{GPC = (smid/2) \% 4}
-    \item 24 TPCs of 2 SMs, 6 TPCs per GPC, round-robin across GPCs.
+    \item 24 TPCs of 2 SMs, 6 TPCs per GPC, round-robin across GPCs
   \end{itemize}
 
-  \textbf{Three independent cross-checks:}
-  \begin{itemize}\itemsep1pt
-    \item union-find yields 4 components of 12 SMs each;
-    \item $4 \times 12 = 48$ matches \texttt{multiProcessorCount};
+  \textbf{Three independent cross-checks:}\vspace{-0.3em}
+  \begin{itemize}\itemsep0pt
+    \item 4 clusters of 12 \emph{distinct} SMs, 48 SMs observed, none twice
+    \item $4 \times 12 = 48$ matches \texttt{multiProcessorCount}
     \item the largest launchable cluster (12) \emph{equals} one GPC's SM count
   \end{itemize}
-
 \end{frame}
 
 % ============================================================ 7. latency

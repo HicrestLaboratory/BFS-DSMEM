@@ -1,6 +1,6 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026) (preloaded format=pdflatex 2026.9.6)  21 SEP 2026 09:58
+This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026) (preloaded format=pdflatex 2026.9.6)  21 SEP 2026 12:39
 entering extended mode
- restricted \write18 enabled.
+ \write18 enabled.
  %&-line parsing enabled.
 **slides.tex
 (./slides.tex
@@ -974,7 +974,7 @@ thon literal format
 )
 (/home/fabio.missagia/texlive/2026/texmf-dist/tex/latex/tools/shellesc.sty
 Package: shellesc 2023/07/08 v1.0d unified shell escape interface for LaTeX
-Package shellesc Info: Restricted shell escape enabled on input line 77.
+Package shellesc Info: Unrestricted shell escape enabled on input line 75.
 )
 (/home/fabio.missagia/texlive/2026/texmf-dist/tex/latex/float/float.sty
 Package: float 2001/11/08 v1.3d Float enhancements (AL)
@@ -1624,58 +1624,58 @@ Overfull \vbox (5.52226pt too high) detected at line 204
 ] [6
 
 ]
-Overfull \vbox (7.16182pt too high) detected at line 292
+Overfull \vbox (8.99426pt too high) detected at line 295
  []
 
 [7
 
 ]
-Overfull \vbox (12.69392pt too high) detected at line 327
+Overfull \vbox (12.69392pt too high) detected at line 330
  []
 
 [8
 
 ]
-<images/chain_latency.png, id=81, 578.16pt x 325.215pt>
+<images/chain_latency.png, id=82, 578.16pt x 325.215pt>
 File: images/chain_latency.png Graphic file (type png)
 <use images/chain_latency.png>
-Package pdftex.def Info: images/chain_latency.png  used on input line 343.
+Package pdftex.def Info: images/chain_latency.png  used on input line 346.
 (pdftex.def)             Requested size: 278.83578pt x 156.84082pt.
 
-Overfull \vbox (19.34888pt too high) detected at line 343
+Overfull \vbox (19.34888pt too high) detected at line 346
  []
 
 [9
 
  <./images/chain_latency.png>]
-<images/dsmem-distance.png, id=88, 939.51pt x 195.129pt>
+<images/dsmem-distance.png, id=89, 939.51pt x 195.129pt>
 File: images/dsmem-distance.png Graphic file (type png)
 <use images/dsmem-distance.png>
-Package pdftex.def Info: images/dsmem-distance.png  used on input line 366.
+Package pdftex.def Info: images/dsmem-distance.png  used on input line 369.
 (pdftex.def)             Requested size: 398.3386pt x 82.73071pt.
  [10
 
  <./images/dsmem-distance.png>]
-<images/stride-smem.png, id=96, 542.025pt x 325.215pt>
+<images/stride-smem.png, id=97, 542.025pt x 325.215pt>
 File: images/stride-smem.png Graphic file (type png)
 <use images/stride-smem.png>
-Package pdftex.def Info: images/stride-smem.png  used on input line 393.
+Package pdftex.def Info: images/stride-smem.png  used on input line 396.
 (pdftex.def)             Requested size: 136.63106pt x 81.97842pt.
-<images/stride-dsmem-c2-d1.png, id=97, 542.025pt x 325.215pt>
+<images/stride-dsmem-c2-d1.png, id=98, 542.025pt x 325.215pt>
 File: images/stride-dsmem-c2-d1.png Graphic file (type png)
 <use images/stride-dsmem-c2-d1.png>
-Package pdftex.def Info: images/stride-dsmem-c2-d1.png  used on input line 393.
+Package pdftex.def Info: images/stride-dsmem-c2-d1.png  used on input line 396.
 
 (pdftex.def)             Requested size: 136.63106pt x 81.97842pt.
-<images/stride-l2.png, id=98, 542.025pt x 325.215pt>
+<images/stride-l2.png, id=99, 542.025pt x 325.215pt>
 File: images/stride-l2.png Graphic file (type png)
 <use images/stride-l2.png>
-Package pdftex.def Info: images/stride-l2.png  used on input line 393.
+Package pdftex.def Info: images/stride-l2.png  used on input line 396.
 (pdftex.def)             Requested size: 136.63106pt x 81.97842pt.
-<images/stride-dram.png, id=99, 542.025pt x 325.215pt>
+<images/stride-dram.png, id=100, 542.025pt x 325.215pt>
 File: images/stride-dram.png Graphic file (type png)
 <use images/stride-dram.png>
-Package pdftex.def Info: images/stride-dram.png  used on input line 393.
+Package pdftex.def Info: images/stride-dram.png  used on input line 396.
 (pdftex.def)             Requested size: 136.63106pt x 81.97842pt.
  [11
 
@@ -1683,16 +1683,16 @@ Package pdftex.def Info: images/stride-dram.png  used on input line 393.
 l2.png> <./images/stride-dram.png>] [12
 
 ]
-Overfull \vbox (2.72116pt too high) detected at line 456
+Overfull \vbox (2.72116pt too high) detected at line 459
  []
 
 [13
 
 ]
-<images/loaded_latency.png, id=125, 794.97pt x 310.761pt>
+<images/loaded_latency.png, id=126, 794.97pt x 310.761pt>
 File: images/loaded_latency.png Graphic file (type png)
 <use images/loaded_latency.png>
-Package pdftex.def Info: images/loaded_latency.png  used on input line 478.
+Package pdftex.def Info: images/loaded_latency.png  used on input line 481.
 (pdftex.def)             Requested size: 394.35739pt x 154.16147pt.
  [14
 
@@ -1713,8 +1713,8 @@ Package pdftex.def Info: images/loaded_latency.png  used on input line 478.
 Package caption Warning: Unused \captionsetup[sub] on input line 18.
 See the caption package documentation for explanation.
 
-runsystem(latexminted cleantemp  --timestamp 20260921095800 F4D5C52946E476C66DF
-C36433C82AA78)...executed safely (allowed).
+runsystem(latexminted cleantemp  --timestamp 20260921123904 F4D5C52946E476C66DF
+C36433C82AA78)...executed.
 
 (./slides.aux)
  ***********
@@ -1728,11 +1728,11 @@ Package logreq Info: Writing requests to 'slides.run.xml'.
 
  ) 
 Here is how much of TeX's memory you used:
- 41984 strings out of 468580
- 902664 string characters out of 5443027
- 1614564 words of memory out of 5000000
- 70392 multiletter control sequences out of 15000+600000
- 659119 words of font info for 108 fonts, out of 8000000 for 9000
+ 41986 strings out of 468580
+ 902687 string characters out of 5443027
+ 1614563 words of memory out of 5000000
+ 70393 multiletter control sequences out of 15000+600000
+ 659940 words of font info for 109 fonts, out of 8000000 for 9000
  319 hyphenation exceptions out of 8191
  102i,13n,123p,1876b,803s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </home/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/
@@ -1750,23 +1750,24 @@ pfb></home/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/public/cm-super/s
 fsi0800.pfb></home/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/public/cm
 -super/sfsi0900.pfb></home/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/p
 ublic/cm-super/sfsi1000.pfb></home/fabio.missagia/texlive/2026/texmf-dist/fonts
-/type1/public/cm-super/sfss0600.pfb></home/fabio.missagia/texlive/2026/texmf-di
-st/fonts/type1/public/cm-super/sfss0800.pfb></home/fabio.missagia/texlive/2026/
-texmf-dist/fonts/type1/public/cm-super/sfss0900.pfb></home/fabio.missagia/texli
-ve/2026/texmf-dist/fonts/type1/public/cm-super/sfss1000.pfb></home/fabio.missag
-ia/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfsx0800.pfb></home/fabi
-o.missagia/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfsx0900.pfb></h
-ome/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfsx1000
+/type1/public/cm-super/sfso0900.pfb></home/fabio.missagia/texlive/2026/texmf-di
+st/fonts/type1/public/cm-super/sfss0600.pfb></home/fabio.missagia/texlive/2026/
+texmf-dist/fonts/type1/public/cm-super/sfss0800.pfb></home/fabio.missagia/texli
+ve/2026/texmf-dist/fonts/type1/public/cm-super/sfss0900.pfb></home/fabio.missag
+ia/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfss1000.pfb></home/fabi
+o.missagia/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfsx0800.pfb></h
+ome/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfsx0900
 .pfb></home/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/public/cm-super/
-sfsx1200.pfb></home/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/public/c
-m-super/sfsx1440.pfb></home/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/
-public/cm-super/sftt0800.pfb></home/fabio.missagia/texlive/2026/texmf-dist/font
-s/type1/public/cm-super/sftt0900.pfb></home/fabio.missagia/texlive/2026/texmf-d
-ist/fonts/type1/public/cm-super/sftt1000.pfb>
-Output written on slides.pdf (15 pages, 952188 bytes).
+sfsx1000.pfb></home/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/public/c
+m-super/sfsx1200.pfb></home/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/
+public/cm-super/sfsx1440.pfb></home/fabio.missagia/texlive/2026/texmf-dist/font
+s/type1/public/cm-super/sftt0800.pfb></home/fabio.missagia/texlive/2026/texmf-d
+ist/fonts/type1/public/cm-super/sftt0900.pfb></home/fabio.missagia/texlive/2026
+/texmf-dist/fonts/type1/public/cm-super/sftt1000.pfb>
+Output written on slides.pdf (15 pages, 963414 bytes).
 PDF statistics:
- 255 PDF objects out of 1000 (max. 8388607)
- 160 compressed objects within 2 object streams
+ 260 PDF objects out of 1000 (max. 8388607)
+ 163 compressed objects within 2 object streams
  31 named destinations out of 1000 (max. 500000)
  88 words of extra memory for PDF output out of 10000 (max. 10000000)
 
