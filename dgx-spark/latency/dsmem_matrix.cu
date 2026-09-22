@@ -28,7 +28,7 @@ namespace cg = cooperative_groups;
 
 __global__ void matrix_chase(const unsigned* __restrict__ perm, int reader,
                              int target, int warmup, int steps, Result* out,
-                             unsigned* smids) {
+                             unsigned* smids, int active) {
     __shared__ unsigned sbuf[SBUF];
     cg::cluster_group cluster = cg::this_cluster();
 
@@ -36,12 +36,13 @@ __global__ void matrix_chase(const unsigned* __restrict__ perm, int reader,
     __syncthreads();
 
     unsigned rank = cluster.block_rank();
-    if (threadIdx.x == 0) smids[rank] = smid();   // who am I, physically?
+    unsigned cl = (unsigned)cg::this_grid().cluster_rank();
+    if (threadIdx.x == 0) smids[cl * cluster.num_blocks() + rank] = smid();
     cluster.sync();                                // all buffers ready
 
     // Exactly ONE thread in the whole cluster chases: no contention, so this
     // is the unloaded latency of the single hop (reader -> target).
-    if ((int)rank == reader && threadIdx.x == 0) {
+    if ((int)cl == active && (int)rank == reader && threadIdx.x == 0) {
         const unsigned* buf = cluster.map_shared_rank((const unsigned*)sbuf, target);
         warm_then_chase(buf, 0, warmup, steps, out);
     }
@@ -53,7 +54,9 @@ int main(int argc, char** argv) {
     Args a;
     a.reps = 21;   // 144 cells, so a smaller default than the other programs
     parse_args(argc, argv, &a, "dsmem_matrix",
-               "  --cluster-size N  blocks per cluster, 2..12            (default 12)\n");
+               "  --cluster-size N  blocks per cluster, 2..12            (default 12)\n"
+               "  --clusters N      clusters to launch; 4 covers all GPCs  (default 1)\n"
+               "  --active N        which cluster is measured, 0..N-1      (default 0)\n");
     if (a.cluster_size == 2) a.cluster_size = 12;   // Args' default means "unset" here
     int cs = a.cluster_size;
     if (cs < 2 || cs > 12) {
@@ -72,12 +75,12 @@ int main(int argc, char** argv) {
 
     Result* out;   unsigned* smids;
     CUDA_CHECK(cudaMallocManaged(&out, sizeof(Result)));
-    CUDA_CHECK(cudaMallocManaged(&smids, cs * sizeof(unsigned)));
+    CUDA_CHECK(cudaMallocManaged(&smids, (size_t)cs * a.clusters * sizeof(unsigned)));
 
     if (cs > 8) allow_big_clusters((const void*)matrix_chase);
 
     cudaLaunchConfig_t cfg = {};
-    cfg.gridDim = dim3(cs, 1, 1);
+    cfg.gridDim = dim3(cs * a.clusters, 1, 1);
     cfg.blockDim = dim3(a.block_size, 1, 1);
     cudaLaunchAttribute attr[1];
     attr[0].id = cudaLaunchAttributeClusterDimension;
@@ -98,13 +101,15 @@ int main(int argc, char** argv) {
             for (int rep = 0; rep < a.reps; rep++) {
                 CUDA_CHECK(cudaLaunchKernelEx(&cfg, matrix_chase,
                                               (const unsigned*)dperm, reader,
-                                              target, a.warmup, a.steps, out, smids));
+                                              target, a.warmup, a.steps, out, smids,
+                                              a.active));
                 CUDA_CHECK(cudaDeviceSynchronize());
-                sr = (int)smids[reader];   st = (int)smids[target];
+                const unsigned* mine = smids + (size_t)a.active * cs;
+                sr = (int)mine[reader];   st = (int)mine[target];
                 // Is the rank -> SM assignment stable across launches?
                 for (int k = 0; k < cs; k++) {
-                    if (smid_of[k] < 0) smid_of[k] = (int)smids[k];
-                    else if (smid_of[k] != (int)smids[k]) smid_changes++;
+                    if (smid_of[k] < 0) smid_of[k] = (int)mine[k];
+                    else if (smid_of[k] != (int)mine[k]) smid_changes++;
                 }
                 int dist = (target - reader + cs) % cs;
                 print_row("dsmem_matrix", cs, dist, 1, a.block_size, a.steps, 0,
@@ -118,6 +123,8 @@ int main(int argc, char** argv) {
     }
 
     // ---- human-readable summary on stderr ----
+    fprintf(stderr, "measured cluster %d of %d  ->  GPC %d\n", a.active, a.clusters,
+            smid_of[0] >= 0 ? (smid_of[0] / 2) % 4 : -1);
     fprintf(stderr, "rank -> SM map (stable across launches: %s)\n",
             smid_changes ? "NO" : "yes");
     fprintf(stderr, "  rank:"); for (int k = 0; k < cs; k++) fprintf(stderr, "%5d", k);

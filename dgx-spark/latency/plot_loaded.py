@@ -14,10 +14,10 @@ are the two halves of Little's law.
 import argparse
 import sys
 
-import matplotlib
-matplotlib.use("Agg")
+import plotstyle                      # noqa: F401  (house style, must precede pyplot use)
 import matplotlib.pyplot as plt
 import pandas as pd
+from matplotlib.lines import Line2D
 from sbatchman.config.project_config import get_experiments_dir
 from sbatchman.core.jobs_manager import jobs_df
 
@@ -48,6 +48,7 @@ def load_runs() -> pd.DataFrame:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="loaded_latency.png")
+    ap.add_argument("--title", default="DSMEM under load: many readers, one owner")
     args = ap.parse_args()
 
     runs = load_runs()
@@ -68,32 +69,35 @@ def main():
     per_rep["gbps"] = per_rep["requesters"] * per_rep["chasers"] * per_rep["steps"] * 4 / per_rep["ns"]
     thr = per_rep.groupby(keys)["gbps"].median().reset_index()
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.3))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
     styles = {("remote", 1): "-", ("local", 1): "--", ("remote", 0): ":"}
     for (tgt, ba, req), g in lat.groupby(["target", "bank_aligned", "requesters"]):
         g = g.sort_values("chasers")
         ls = styles.get((tgt, ba), "-.")
         lbl = f"{tgt}, {req} requester{'s' if req > 1 else ''}" + ("" if ba else ", random banks")
-        line, = ax1.plot(g["total"], g["mean"], ls, marker="o", ms=3, lw=1.4, label=lbl)
-        ax1.plot(g["total"], g["p95"], ls, color=line.get_color(), lw=0.6, alpha=0.5)
+        line, = ax1.plot(g["total"], g["mean"], ls, marker="o", label=lbl)
+        ax1.plot(g["total"], g["p95"], ls, color=line.get_color(), lw=0.8, alpha=0.5)
         t = thr[(thr.target == tgt) & (thr.bank_aligned == ba) & (thr.requesters == req)].sort_values("total")
-        ax2.plot(t["total"], t["gbps"], ls, marker="o", ms=3, lw=1.4, color=line.get_color(), label=lbl)
+        ax2.plot(t["total"], t["gbps"], ls, marker="o", color=line.get_color(), label=lbl)
 
     for ax in (ax1, ax2):
         ax.set_xscale("log", base=2)
         ax.set_yscale("log")
-        ax.set_xlabel("concurrent chasing threads, all requesters together")
+        ax.set_xlabel("concurrent threads")
         ax.grid(True, which="both", alpha=0.3)
-    ax1.set_ylabel("latency per load (cycles), mean over warps; thin = p95")
-    ax2.set_ylabel("aggregate throughput (GB/s)")
-    ax1.set_title("latency under load (remote = rank 0's shared memory)")
-    ax2.set_title("aggregate throughput under load")
-    ax1.legend(fontsize=7)
-    fig.tight_layout()
-    fig.savefig(args.out, dpi=160)
-    stem = args.out.rsplit(".", 1)[0]
-    fig.savefig(stem + ".pdf")
-    print(f"wrote {args.out} and {stem}.pdf")
+    ax1.set_ylabel("latency (cycles)")
+    ax2.set_ylabel("throughput (GB/s)")
+    ax1.set_title("Latency")
+    ax2.set_title("Throughput")
+    fig.suptitle(args.title, fontweight="bold")
+    # Thin companion lines are the p95; say so once, in the legend.
+    handles, labels = ax1.get_legend_handles_labels()
+    handles.append(Line2D([], [], color="0.35", lw=0.8, alpha=0.6))
+    labels.append("thin line = p95")
+    ax1.legend(handles, labels, frameon=False)
+
+    for p in plotstyle.save(fig, args.out):
+        print(f"wrote {p}")
 
     pd.set_option("display.width", 160)
     table = lat.merge(thr, on=keys)

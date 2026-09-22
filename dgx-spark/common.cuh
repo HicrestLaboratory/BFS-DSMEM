@@ -152,6 +152,9 @@ struct Args {
     int requesters = 1;     // requester blocks (cluster size = requesters + 1)
     int target_remote = 1;  // 1 = chase rank 0's buffer, 0 = chase own buffer
     int bank_aligned = 1;   // 1 = each lane on its own bank, 0 = random banks
+    // dsmem_matrix.cu only:
+    int clusters = 1;       // clusters to launch; 4 covers every GPC at once
+    int active = 0;         // which cluster's reader actually chases
 };
 
 // The flags common to every program, for --help.
@@ -191,6 +194,8 @@ void parse_args(int argc, char** argv, Args* a, const char* prog,
         else if (strcmp(f, "--chasers") == 0)       a->chasers = atoi(v);
         else if (strcmp(f, "--requesters") == 0)    a->requesters = atoi(v);
         else if (strcmp(f, "--bank-aligned") == 0)  a->bank_aligned = atoi(v);
+        else if (strcmp(f, "--clusters") == 0)      a->clusters = atoi(v);
+        else if (strcmp(f, "--active") == 0)        a->active = atoi(v);
         else if (strcmp(f, "--target") == 0) {
             if (strcmp(v, "remote") == 0)      a->target_remote = 1;
             else if (strcmp(v, "local") == 0)  a->target_remote = 0;

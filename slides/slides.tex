@@ -394,15 +394,13 @@
 \end{frame}
 
 \begin{frame}{Latency Benchmark -- Random pChase}
-  \vspace{0.2em}
   \footnotesize
-  Same chase, but thread 0 of rank 0 accesses a \emph{peer} block's SMEM at rank distance $d$, median of 101 reps.
+  Same chase, but thread 0 of rank 0 accesses a \emph{peer} block's DSMEM at rank distance $d$.
+  \vspace{0.2em}
 
-  \vspace{0.1em}
   \centering
-  \includegraphics[width=\linewidth]{images/dsmem-distance.png}
+  \includegraphics[width=0.9\linewidth]{images/dsmem-distance.png}
 
-  \vspace{0.1em}
   \raggedright
   \begin{itemize}\itemsep1pt
     \item \textbf{A genuine SM-to-SM path.} A remote access costs about \emph{half} an L2 hit and a \emph{fifth}
@@ -414,6 +412,104 @@
           DRAM are \emph{slower} than Hopper's while its fabric is not, DSMEM's advantage is \emph{larger} here.
   \end{itemize}
 
+\end{frame}
+
+% ============================================================ rank matrix
+\begin{frame}{Distance does not matter}
+  \vspace{0.3em}
+  \footnotesize
+  Rank 0 $\to$ its own TPC sibling (rank 1) is 210.9\,cy, the
+  \emph{slowest} pair of all...
+
+  Rank 0 $\to$ the far rank 10 is 179.9\,cy, the
+  \emph{fastest} pair of all...
+
+  \vspace{0.15em}
+  \textbf{Let's measure every pair!}
+  \vspace{-1em}
+
+  \begin{columns}[c,onlytextwidth]
+    \begin{column}{0.5\textwidth}
+      \textbf{Facts from the matrix}
+      \begin{itemize}\itemsep3pt
+        \item perfectly \textbf{symmetric}
+        \item TPC siblings have \textbf{identical rows}
+        \item the diagonal is \textbf{not flat} (211 vs 149)
+        \item \textbf{same results} in all 4 GPCs
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.5\textwidth}
+      \centering
+      \includegraphics[height=0.7\textheight]{images/dsmem-matrix.png}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% ============================================================ the hub
+\begin{frame}{If distance does not matter, what does?}
+  \vspace{0.2em}
+  \footnotesize
+  \begin{columns}[c,onlytextwidth]
+  \begin{column}{0.58\textwidth}
+    Over all 36 TPC pairs the following holds with zero error:
+
+    \vspace{0.6em}
+    Maybe a \textbf{shared meeting point}?
+
+    \vspace{0.6em}
+    Every request may go SM $\to$ hub $\to$ SM.
+  \end{column}
+  \begin{column}{0.4\textwidth}
+    \centering
+    $\text{latency}(k \to d) = 149 + w_k + w_d$
+
+    \vspace{0.5em}
+    \scriptsize
+    \begin{tabular}{lcccccc}
+      \toprule
+      \textbf{TPC} & 5 & 2 & 4 & 1 & 3 & 0 \\
+      $\boldsymbol{w}$ \textbf{(cy)} & 0 & 8 & 12 & 19 & 24 & 31 \\
+      \bottomrule
+    \end{tabular}
+  \end{column}
+  \end{columns}
+
+  \vspace{2em}
+  \textbf{Independent confirmation:} reading \emph{L2} from every SM shows the same pattern!
+  \vspace{1em}
+
+  \begin{columns}[T,onlytextwidth]
+  \begin{column}{0.5\textwidth}
+    \centering
+    {\scriptsize median L2 latency (cy), per TPC}\\[3pt]
+    \scriptsize
+    \begin{tabular}{lcccccc}
+      \toprule
+      TPC pos. & 0 & 1 & 2 & 3 & 4 & 5 \\
+      \midrule
+      GPC 0 & 343 & 331 & 320 & 336 & 324 & 312 \\
+      GPC 1 & 318 & 306 & 295 & 311 & 299 & 287 \\
+      GPC 2 & 318 & 306 & 295 & 311 & 299 & 287 \\
+      GPC 3 & 341 & 329 & 318 & 334 & 322 & 310 \\
+      \bottomrule
+    \end{tabular}
+  \end{column}
+  \begin{column}{0.5\textwidth}
+    \centering
+    {\scriptsize row minus its minimum $=$ per-TPC distance}\\[3pt]
+    \scriptsize
+    \begin{tabular}{lcccccc}
+      \toprule
+      TPC pos. & 0 & 1 & 2 & 3 & 4 & 5 \\
+      \midrule
+      GPC 0 & \textbf{31} & \textbf{19} & \textbf{8} & \textbf{24} & \textbf{12} & \textbf{0} \\
+      GPC 1 & \textbf{31} & \textbf{19} & \textbf{8} & \textbf{24} & \textbf{12} & \textbf{0} \\
+      GPC 2 & \textbf{31} & \textbf{19} & \textbf{8} & \textbf{24} & \textbf{12} & \textbf{0} \\
+      GPC 3 & \textbf{31} & \textbf{19} & \textbf{8} & \textbf{24} & \textbf{12} & \textbf{0} \\
+      \bottomrule
+    \end{tabular}
+  \end{column}
+  \end{columns}
 \end{frame}
 
 \begin{frame}{Latency Benchmark -- Linear pChase}
@@ -457,10 +553,10 @@
     \textbf{blockDim} & \textbf{total blocks} & \textbf{total blocks} & \textbf{penalty} & \textbf{occupancy} \\
      & \textbf{(unclustered)} & \textbf{(clustered)} & & \textbf{(clustered)} \\
     \midrule
-    64   & 1152 & 96 & \textbf{12$\times$} & 8\% \\
+    64   & 1152 & 96 & 12$\times$ & 8\% \\
     128  & 576  & 96 & 6$\times$           & 17\% \\
     256  & 288  & 96 & 3$\times$           & 33\% \\
-    512  & 144  & 96 & 1.5$\times$         & \textbf{67\%} \\
+    512  & 144  & 96 & 1.5$\times$         & 67\% \\
     1024 & 48   & 48 & none                & 67\% \\
     \bottomrule
   \end{tabular}
@@ -555,3 +651,17 @@
 \end{frame}
 
 \end{document}
+
+% \begin{column}{0.42\textwidth}
+%     \centering
+%     \begin{tikzpicture}[scale=0.42, every node/.style={font=\tiny}]
+%       \foreach \t/\w/\y in {20/0/5.0, 8/8/4.1, 16/12/3.2, 4/19/2.3, 12/24/1.4, 0/31/0.5} {
+%         \draw[fill=mygreen!30, draw=mygreen!80!black] (0,\y-0.24) rectangle (1.8,\y+0.24);
+%         \node at (0.9,\y) {TPC \t};
+%         \draw[myblue, thick] (1.8,\y) --
+%               node[pos=0.32, myred, font=\tiny, fill=white, inner sep=1pt] {\w} (4.9,2.75);
+%       }
+%       \draw[fill=myblue!25, draw=myblue!80!black, rounded corners] (4.9,2.15) rectangle (6.9,3.35);
+%       \node[align=center] at (5.9,2.75) {hub\\[-2pt]{\tiny $+\,149$}};
+%     \end{tikzpicture}
+%   \end{column}

@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026) (preloaded format=pdflatex 2026.9.6)  21 SEP 2026 17:11
+This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026) (preloaded format=pdflatex 2026.9.6)  22 SEP 2026 12:10
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -1645,64 +1645,104 @@ Overfull \vbox (8.79738pt too high) detected at line 353
 ] [9
 
 ]
-<images/chain_latency.png, id=90, 578.16pt x 325.215pt>
+<images/chain_latency.png, id=90, 730.83037pt x 405.61537pt>
 File: images/chain_latency.png Graphic file (type png)
 <use images/chain_latency.png>
 Package pdftex.def Info: images/chain_latency.png  used on input line 394.
-(pdftex.def)             Requested size: 278.83578pt x 156.84082pt.
+(pdftex.def)             Requested size: 278.83578pt x 154.75435pt.
  [10
 
  <./images/chain_latency.png>]
-<images/dsmem-distance.png, id=97, 939.51pt x 195.129pt>
+<images/dsmem-distance.png, id=97, 1228.59pt x 383.93437pt>
 File: images/dsmem-distance.png Graphic file (type png)
 <use images/dsmem-distance.png>
-Package pdftex.def Info: images/dsmem-distance.png  used on input line 417.
-(pdftex.def)             Requested size: 398.3386pt x 82.73071pt.
- [11
+Package pdftex.def Info: images/dsmem-distance.png  used on input line 415.
+(pdftex.def)             Requested size: 358.50229pt x 112.02939pt.
+
+Overfull \vbox (13.53424pt too high) detected at line 415
+ []
+
+[11
 
  <./images/dsmem-distance.png>]
-<images/stride-smem.png, id=105, 542.025pt x 325.215pt>
-File: images/stride-smem.png Graphic file (type png)
-<use images/stride-smem.png>
-Package pdftex.def Info: images/stride-smem.png  used on input line 444.
-(pdftex.def)             Requested size: 136.63106pt x 81.97842pt.
-<images/stride-dsmem-c2-d1.png, id=106, 542.025pt x 325.215pt>
-File: images/stride-dsmem-c2-d1.png Graphic file (type png)
-<use images/stride-dsmem-c2-d1.png>
-Package pdftex.def Info: images/stride-dsmem-c2-d1.png  used on input line 444.
+<images/dsmem-matrix.png, id=105, 540.21825pt x 470.65837pt>
+File: images/dsmem-matrix.png Graphic file (type png)
+<use images/dsmem-matrix.png>
+Package pdftex.def Info: images/dsmem-matrix.png  used on input line 446.
+(pdftex.def)             Requested size: 186.52386pt x 162.50986pt.
 
-(pdftex.def)             Requested size: 136.63106pt x 81.97842pt.
-<images/stride-l2.png, id=107, 542.025pt x 325.215pt>
-File: images/stride-l2.png Graphic file (type png)
-<use images/stride-l2.png>
-Package pdftex.def Info: images/stride-l2.png  used on input line 444.
-(pdftex.def)             Requested size: 136.63106pt x 81.97842pt.
-<images/stride-dram.png, id=108, 542.025pt x 325.215pt>
-File: images/stride-dram.png Graphic file (type png)
-<use images/stride-dram.png>
-Package pdftex.def Info: images/stride-dram.png  used on input line 444.
-(pdftex.def)             Requested size: 136.63106pt x 81.97842pt.
+Overfull \vbox (9.84143pt too high) detected at line 446
+ []
 
 [12
 
- <./images/stride-smem.png> <./images/stride-dsmem-c2-d1.png> <./images/stride-
-l2.png> <./images/stride-dram.png>] [13
+ <./images/dsmem-matrix.png>]
+LaTeX Font Info:    Font shape `OT1/cmss/b/n' in size <8> not available
+(Font)              Font shape `OT1/cmss/bx/n' tried instead on input line 513.
+
+LaTeX Font Info:    Font shape `OT1/cmss/b/n' in size <6> not available
+(Font)              Font shape `OT1/cmss/bx/n' tried instead on input line 513.
+
+LaTeX Font Info:    Font shape `OT1/cmss/b/n' in size <5> not available
+(Font)              Font shape `OT1/cmss/bx/n' tried instead on input line 513.
+
+
+
+LaTeX Font Warning: Font shape `T1/cmss/b/n' undefined
+(Font)              using `T1/cmss/m/n' instead on input line 513.
+
+
+LaTeX Font Warning: Font shape `T1/cmss/b/it' undefined
+(Font)              using `T1/cmss/b/n' instead on input line 513.
+
+[13
 
 ]
-Overfull \vbox (2.72116pt too high) detected at line 507
+<images/stride-smem.png, id=119, 586.29037pt x 369.48038pt>
+File: images/stride-smem.png Graphic file (type png)
+<use images/stride-smem.png>
+Package pdftex.def Info: images/stride-smem.png  used on input line 540.
+(pdftex.def)             Requested size: 136.63106pt x 86.10062pt.
+<images/stride-dsmem-c2-d1.png, id=120, 586.29037pt x 369.48038pt>
+File: images/stride-dsmem-c2-d1.png Graphic file (type png)
+<use images/stride-dsmem-c2-d1.png>
+Package pdftex.def Info: images/stride-dsmem-c2-d1.png  used on input line 540.
+
+(pdftex.def)             Requested size: 136.63106pt x 86.10062pt.
+<images/stride-l2.png, id=121, 586.29037pt x 369.48038pt>
+File: images/stride-l2.png Graphic file (type png)
+<use images/stride-l2.png>
+Package pdftex.def Info: images/stride-l2.png  used on input line 540.
+(pdftex.def)             Requested size: 136.63106pt x 86.10062pt.
+<images/stride-dram.png, id=122, 586.29037pt x 369.48038pt>
+File: images/stride-dram.png Graphic file (type png)
+<use images/stride-dram.png>
+Package pdftex.def Info: images/stride-dram.png  used on input line 540.
+(pdftex.def)             Requested size: 136.63106pt x 86.10062pt.
+
+Overfull \vbox (6.92267pt too high) detected at line 540
  []
 
 [14
 
+ <./images/stride-smem.png> <./images/stride-dsmem-c2-d1.png> <./images/stride-
+l2.png> <./images/stride-dram.png>] [15
+
 ]
-<images/loaded_latency.png, id=132, 794.97pt x 310.761pt>
+Overfull \vbox (2.72116pt too high) detected at line 603
+ []
+
+[16
+
+]
+<images/loaded_latency.png, id=145, 1153.15819pt x 441.75038pt>
 File: images/loaded_latency.png Graphic file (type png)
 <use images/loaded_latency.png>
-Package pdftex.def Info: images/loaded_latency.png  used on input line 529.
-(pdftex.def)             Requested size: 394.35739pt x 154.16147pt.
- [15
+Package pdftex.def Info: images/loaded_latency.png  used on input line 625.
+(pdftex.def)             Requested size: 394.35739pt x 151.06941pt.
+ [17
 
- <./images/loaded_latency.png>] [16
+ <./images/loaded_latency.png>] [18
 
 ]
 \tf@nav=\write8
@@ -1719,7 +1759,7 @@ Package pdftex.def Info: images/loaded_latency.png  used on input line 529.
 Package caption Warning: Unused \captionsetup[sub] on input line 18.
 See the caption package documentation for explanation.
 
-runsystem(latexminted cleantemp  --timestamp 20260921171133 F4D5C52946E476C66DF
+runsystem(latexminted cleantemp  --timestamp 20260922121057 F4D5C52946E476C66DF
 C36433C82AA78)...executed safely (allowed).
 
 (./slides.aux)
@@ -1727,6 +1767,10 @@ C36433C82AA78)...executed safely (allowed).
 LaTeX2e <2026-06-01>
 L3 programming layer <2026-08-10>
  ***********
+
+
+LaTeX Font Warning: Some font shapes were not available, defaults substituted.
+
 Package rerunfilecheck Info: File `slides.out' has not changed.
 (rerunfilecheck)             Checksum: D41D8CD98F00B204E9800998ECF8427E;0.
 Package logreq Info: Writing requests to 'slides.run.xml'.
@@ -1734,13 +1778,13 @@ Package logreq Info: Writing requests to 'slides.run.xml'.
 
  ) 
 Here is how much of TeX's memory you used:
- 42077 strings out of 468580
- 904506 string characters out of 5443027
+ 42121 strings out of 468580
+ 905236 string characters out of 5443027
  1620564 words of memory out of 5000000
- 70482 multiletter control sequences out of 15000+600000
- 660207 words of font info for 110 fonts, out of 8000000 for 9000
+ 70515 multiletter control sequences out of 15000+600000
+ 662924 words of font info for 119 fonts, out of 8000000 for 9000
  319 hyphenation exceptions out of 8191
- 102i,13n,123p,1876b,1040s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 102i,14n,123p,1876b,1040s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </home/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/
 cmmi5.pfb></home/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/public/amsf
 onts/cm/cmmi6.pfb></home/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/pub
@@ -1754,27 +1798,28 @@ a/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy6.pfb></home/fabio
 me/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy9.
 pfb></home/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/public/cm-super/s
 frm0800.pfb></home/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/public/cm
--super/sfsi0800.pfb></home/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/p
-ublic/cm-super/sfsi0900.pfb></home/fabio.missagia/texlive/2026/texmf-dist/fonts
-/type1/public/cm-super/sfsi1000.pfb></home/fabio.missagia/texlive/2026/texmf-di
-st/fonts/type1/public/cm-super/sfss0600.pfb></home/fabio.missagia/texlive/2026/
-texmf-dist/fonts/type1/public/cm-super/sfss0800.pfb></home/fabio.missagia/texli
-ve/2026/texmf-dist/fonts/type1/public/cm-super/sfss0900.pfb></home/fabio.missag
-ia/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfss1000.pfb></home/fabi
-o.missagia/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfsx0600.pfb></h
-ome/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfsx0800
+-super/sfsi0600.pfb></home/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/p
+ublic/cm-super/sfsi0800.pfb></home/fabio.missagia/texlive/2026/texmf-dist/fonts
+/type1/public/cm-super/sfsi0900.pfb></home/fabio.missagia/texlive/2026/texmf-di
+st/fonts/type1/public/cm-super/sfsi1000.pfb></home/fabio.missagia/texlive/2026/
+texmf-dist/fonts/type1/public/cm-super/sfss0600.pfb></home/fabio.missagia/texli
+ve/2026/texmf-dist/fonts/type1/public/cm-super/sfss0800.pfb></home/fabio.missag
+ia/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfss0900.pfb></home/fabi
+o.missagia/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfss1000.pfb></h
+ome/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sfsx0600
 .pfb></home/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/public/cm-super/
-sfsx0900.pfb></home/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/public/c
-m-super/sfsx1000.pfb></home/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/
-public/cm-super/sfsx1200.pfb></home/fabio.missagia/texlive/2026/texmf-dist/font
-s/type1/public/cm-super/sfsx1440.pfb></home/fabio.missagia/texlive/2026/texmf-d
-ist/fonts/type1/public/cm-super/sftt0800.pfb></home/fabio.missagia/texlive/2026
-/texmf-dist/fonts/type1/public/cm-super/sftt0900.pfb></home/fabio.missagia/texl
-ive/2026/texmf-dist/fonts/type1/public/cm-super/sftt1000.pfb>
-Output written on slides.pdf (16 pages, 987995 bytes).
+sfsx0800.pfb></home/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/public/c
+m-super/sfsx0900.pfb></home/fabio.missagia/texlive/2026/texmf-dist/fonts/type1/
+public/cm-super/sfsx1000.pfb></home/fabio.missagia/texlive/2026/texmf-dist/font
+s/type1/public/cm-super/sfsx1200.pfb></home/fabio.missagia/texlive/2026/texmf-d
+ist/fonts/type1/public/cm-super/sfsx1440.pfb></home/fabio.missagia/texlive/2026
+/texmf-dist/fonts/type1/public/cm-super/sftt0800.pfb></home/fabio.missagia/texl
+ive/2026/texmf-dist/fonts/type1/public/cm-super/sftt0900.pfb></home/fabio.missa
+gia/texlive/2026/texmf-dist/fonts/type1/public/cm-super/sftt1000.pfb>
+Output written on slides.pdf (18 pages, 1333471 bytes).
 PDF statistics:
- 270 PDF objects out of 1000 (max. 8388607)
- 170 compressed objects within 2 object streams
- 33 named destinations out of 1000 (max. 500000)
- 88 words of extra memory for PDF output out of 10000 (max. 10000000)
+ 290 PDF objects out of 1000 (max. 8388607)
+ 184 compressed objects within 2 object streams
+ 37 named destinations out of 1000 (max. 500000)
+ 93 words of extra memory for PDF output out of 10000 (max. 10000000)
 
