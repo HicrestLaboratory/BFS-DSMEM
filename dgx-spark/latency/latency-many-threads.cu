@@ -1,34 +1,53 @@
-// latency-many-threads.cu — DSMEM latency UNDER LOAD.
+// latency-many-threads.cu — DSMEM under load, and whether it matters WHO you read.
 //
-// dsmem_remote.cu measures ONE thread chasing alone. That is the unloaded
-// latency: the raw cost of the path when nothing else is in flight. It is a
-// real number and a lower bound, but no kernel ever runs like that. Here
-// R requester blocks each run N chasing threads at the same time, all
-// against a single owner block's shared memory (rank 0, the hot spot).
-// Requests now queue: at the issuing SM, in the SM-to-SM fabric, and at the
-// owner's SRAM port. What comes out is the latency-versus-load curve whose
-// two endpoints were already known — ~200 cycles unloaded (dsmem_remote) and
-// ~5 GB/s per SM saturated (throughput.cu) — and whose middle is where a real
-// algorithm lives. Little's law ties the three together:
-//     loads in flight  =  throughput (loads/cycle)  x  latency (cycles)
+// dsmem_remote.cu measures ONE thread chasing alone: the unloaded latency, a
+// real number but a lower bound no kernel ever sees. Here every reader block
+// runs a full complement of threads, so requests queue: at the issuing SM, in
+// the SM-to-SM fabric, and at the owner's SRAM port. Little's law ties the
+// three quantities together, and because the chase is dependent each thread
+// has exactly ONE load outstanding, so
+//     loads in flight  =  throughput (loads/cycle) x latency (cycles)
+//                      =  number of chasing threads, by construction.
+// That identity is printed as a self-check: if the timing or the throughput
+// arithmetic were wrong, it would not come out.
 //
-// Every WARP times its own chase (a warp's 32 lanes issue one load
-// instruction and finish together, so per-lane rows would be 32 copies), and
-// every warp is emitted as its own row: the spread across warps is the
-// fairness of the arbitration, which is exactly the "scheduling" question.
+// THE PATTERN. --pattern decides whose shared memory each block reads, and
+// nothing else changes between the three:
 //
-//   --chasers N          chasing threads per requester block, 1..1024
-//   --requesters R       requester blocks, 1..11; the cluster is R+1 blocks
-//   --target remote|local
-//                        remote: rank 0's buffer through map_shared_rank (LD)
-//                        local:  each block's own buffer (LDS) — the control
-//                        that tells a fabric bottleneck from an SRAM-port one
-//   --bank-aligned 1|0   1: lane l walks a cycle inside bank l, so a warp
-//                        never conflicts with itself (default);
-//                        0: all lanes walk one random cycle — random banks
+//   hotspot   every block reads rank 0; rank 0 itself only owns memory.
+//             Maximum concentration: cluster_size-1 readers, ONE owner.
+//   ring      rank k reads rank k+1 (mod cluster_size). Maximum spread:
+//             every rank is a reader AND an owner, exactly one reader each.
+//   random    each WARP draws its own target rank (never its own). Realistic
+//             imbalance: about one reader per owner, but clumped by luck.
+//
+// hotspot vs ring at the same thread count is the experiment that matters. If
+// ring delivers ~N times the aggregate throughput, the saturation point is a
+// PER-OWNER limit and spreading ownership multiplies bandwidth. If ring
+// delivers the same, the fabric itself is the ceiling and no partitioning
+// scheme can help.
+//
+// WHY THE TARGET IS DRAWN PER WARP. A warp issues one load instruction for
+// all 32 lanes. If every lane addresses the same peer, that is one coherent
+// request to one remote SM, exactly like hotspot but aimed elsewhere. If
+// lanes addressed different peers, one instruction would have to fan out to
+// up to 32 SMs, and a bad result could not be attributed to spreading rather
+// than to fan-out. Per-warp changes exactly one variable versus hotspot.
+// (Per-thread fan-out is a separate experiment, deliberately not done here.)
+//
+//   --cluster-size N   blocks in the cluster, 2..12              (default 12)
+//   --block-size N     threads per block, multiple of 32         (default 128 = 4 warps)
+//   --pattern P        hotspot | ring | random                   (default hotspot)
+//   --bank-conflict 1  one shared cycle, lanes may collide in a bank (default)
+//   --bank-conflict 0  32 per-bank cycles, a warp never conflicts with itself
+//
+// Every WARP times its own chase and is emitted as its own CSV row: the 32
+// lanes of a warp run in lockstep and hold the same measurement, so per-lane
+// rows would be 32 copies. The spread ACROSS warps is the fairness of the
+// arbitration.
 //
 // Build: make latency-many-threads
-// Run:   ./latency-many-threads --target remote --requesters 4 --chasers 256
+// Run:   ./latency-many-threads --pattern ring --block-size 128
 
 #include <cooperative_groups.h>
 
@@ -36,9 +55,13 @@
 
 namespace cg = cooperative_groups;
 
+enum { PAT_HOTSPOT = 0, PAT_RING = 1, PAT_RANDOM = 2 };
+static const char* PATTERN_NAME[] = {"hotspot", "ring", "random"};
+
 // 32 independent random cycles, one per shared-memory bank (bank = element
-// index mod 32). Lane l of every warp walks bank l's cycle, so the 32 lanes
-// of one load instruction always hit 32 different banks.
+// index mod 32). Lane l walks bank l's cycle and never leaves it, so the 32
+// lanes of one load instruction always hit 32 different banks. Used only when
+// --bank-conflict 0.
 void make_bank_cycles(std::vector<unsigned>& p, std::mt19937& rng) {
     const int per_bank = SBUF / 32;  // 128 elements in each bank
     std::vector<unsigned> c(per_bank);
@@ -48,140 +71,167 @@ void make_bank_cycles(std::vector<unsigned>& p, std::mt19937& rng) {
     }
 }
 
-__global__ void loaded_chase(const unsigned* __restrict__ perm, int chasers,
-                             int target_remote, int bank_aligned, int warmup,
-                             int steps, Result* out) {
+// A cheap, well-mixed hash: used both to pick random targets and to scatter
+// starting offsets. Deterministic, so a run is reproducible from --seed.
+__device__ __forceinline__ unsigned mix(unsigned x) {
+    x ^= x >> 16; x *= 0x7feb352du;
+    x ^= x >> 15; x *= 0x846ca68bu;
+    x ^= x >> 16;
+    return x;
+}
+
+__global__ void loaded_chase(const unsigned* __restrict__ perm, int pattern,
+                             int bank_conflict, int seed, int warmup, int steps,
+                             Result* out, unsigned* smids) {
     __shared__ unsigned sbuf[SBUF];
     cg::cluster_group cluster = cg::this_cluster();
+    const int cs = (int)cluster.num_blocks();
+    const int rank = (int)cluster.block_rank();
+    const int warps = blockDim.x / 32;
 
     for (int i = threadIdx.x; i < SBUF; i += blockDim.x) sbuf[i] = perm[i];
     __syncthreads();
-    cluster.sync();  // every buffer filled; every chaser starts from here
+    if (threadIdx.x == 0) smids[rank] = smid();
+    cluster.sync();  // every buffer filled before anyone reads a peer's
 
-    unsigned rank = cluster.block_rank();
-    if (rank != 0 && (int)threadIdx.x < chasers) {  // rank 0 only owns memory
-        // lane's position inside its warp
-        int lane = threadIdx.x & 31; // & 31 -> mod 32
-        // which warp it is.
-        int warp = threadIdx.x >> 5; // >> 5 -> divide by 32
-        // Distinct starting points. Bank-aligned: lane l must start on an
-        // element of bank l (index = l mod 32); warp w takes the w-th one.
-        // Random cycle: any hash that spreads the threads out will do.
-        unsigned start = bank_aligned
-            ? (unsigned)(lane + 32 * warp)  // this is just threadIdx.x, written to show the banks
-            : (unsigned)(((threadIdx.x + 1024u * (rank - 1)) * 2654435761u) % SBUF);
-        Result r;
-        if (target_remote) {
-            const unsigned* buf = cluster.map_shared_rank((const unsigned*)sbuf, 0);
-            warm_then_chase(buf, start, warmup, steps, &r);
-        } else {
-            warm_then_chase(sbuf, start, warmup, steps, &r);
-        }
-        // write the elapsed time for this warp to its row in the output array.
-        // rank 1, warps 0 1 2 3  ->  out[0] out[1] out[2] out[3]
-        // rank 2, warps 0 1 2 3  ->  out[4] out[5] out[6] out[7]
-        if (lane == 0) out[(rank - 1) * (blockDim.x / 32) + warp] = r;
+    const int lane = threadIdx.x & 31, warp = (int)threadIdx.x >> 5;
+
+    // Who does this warp read from? -1 means "this block does not read".
+    int target = -1;
+    if (pattern == PAT_HOTSPOT) {
+        if (rank != 0) target = 0;                  // rank 0 only owns memory
+    } else if (pattern == PAT_RING) {
+        target = (rank + 1) % cs;
+    } else {                                        // PAT_RANDOM, per warp
+        // uniform over the cs-1 ranks that are not me, then skip self
+        target = (int)(mix((unsigned)(rank * 977 + warp * 31 + seed)) % (unsigned)(cs - 1));
+        if (target >= rank) target++;
     }
 
-    // The owner's shared memory is freed when the owner exits: keep every
-    // block alive until the last chaser is done.
+    if (target >= 0) {
+        // Distinct entry points, or the lanes would read one address and the
+        // hardware would broadcast instead of making independent requests.
+        // Bank-conflict-free: lane l must start on an element of bank l.
+        unsigned start = bank_conflict
+            ? (mix((unsigned)(threadIdx.x + 1024 * rank + 7 * seed)) % SBUF)
+            : (unsigned)(lane + 32 * warp);
+        Result r;
+        const unsigned* buf = cluster.map_shared_rank((const unsigned*)sbuf, target);
+        warm_then_chase(buf, start, warmup, steps, &r);
+        if (lane == 0) {
+            out[rank * warps + warp] = r;
+            smids[cs + rank * warps + warp] = (unsigned)target;   // who I read
+        }
+    }
+
+    // A block's shared memory is released when it exits: hold every block
+    // alive until the last reader has finished with it.
     cluster.sync();
 }
 
 int main(int argc, char** argv) {
     Args a;
+    a.cluster_size = 12;   // Args' default of 2 means "unset" for this program
     parse_args(argc, argv, &a, "latency-many-threads",
-               "  --chasers N       chasing threads per requester block, 1..1024 (default 1)\n"
-               "  --requesters R    requester blocks, 1..11; cluster is R+1     (default 1)\n"
-               "  --target remote|local  rank 0's buffer via map_shared_rank, or own buffer (default remote)\n"
-               "  --bank-aligned 0|1  1 = lane l walks bank l, no intra-warp conflicts (default 1)\n");
-    if (a.chasers < 1 || a.chasers > 1024) {
-        fprintf(stderr, "latency-many-threads: --chasers must be 1..1024\n");
+               "  --cluster-size N  blocks in the cluster, 2..12          (default 12)\n"
+               "  --block-size N    threads per block, multiple of 32     (default 128)\n"
+               "  --pattern P       hotspot | ring | random               (default hotspot)\n"
+               "  --bank-conflict N 1 = allow intra-warp bank conflicts   (default 1)\n");
+    const int cs = a.cluster_size;
+    if (cs < 2 || cs > 12) {
+        fprintf(stderr, "latency-many-threads: --cluster-size must be 2..12 on GB10\n");
         return 1;
     }
-    if (a.requesters < 1 || a.requesters > 11) {
-        fprintf(stderr, "latency-many-threads: --requesters must be 1..11 (cluster size %d > 12)\n",
-                a.requesters + 1);
+    if (a.block_size < 32 || a.block_size > 1024 || a.block_size % 32) {
+        fprintf(stderr, "latency-many-threads: --block-size must be a multiple of 32, 32..1024\n");
         return 1;
     }
-    int block_size = ((a.chasers + 31) / 32) * 32;  // whole warps only
-    int warps = block_size / 32;                     // chasing warps per block
-    int cluster_size = a.requesters + 1;
-    int rows = a.requesters * warps;                 // one Result per chasing warp
+    const int warps = a.block_size / 32;
+    // hotspot keeps rank 0 passive; ring and random make every rank a reader.
+    const int readers = (a.pattern == PAT_HOTSPOT) ? cs - 1 : cs;
+    const int rows = cs * warps;           // rank 0's slots stay empty in hotspot
 
-    char extra[256];
+    char extra[320];
     snprintf(extra, sizeof extra,
-             "# chasers: %d\n# requesters: %d\n# target: %s\n# bank_aligned: %d\n"
-             "# warps_per_requester: %d\n",
-             a.chasers, a.requesters, a.target_remote ? "remote" : "local",
-             a.bank_aligned, warps);
+             "# pattern: %s\n# cluster_size: %d\n# readers: %d\n# warps_per_block: %d\n"
+             "# bank_conflict: %d\n",
+             PATTERN_NAME[a.pattern], cs, readers, warps, a.bank_conflict);
     print_header(argc, argv, a, SBUF, extra);
 
     std::mt19937 rng(a.seed);
     std::vector<unsigned> hperm(SBUF);
-    if (a.bank_aligned) make_bank_cycles(hperm, rng);
-    else                make_pattern(hperm, rng, a.stride_bytes);
+    if (a.bank_conflict) make_pattern(hperm, rng, a.stride_bytes);
+    else                 make_bank_cycles(hperm, rng);
     unsigned* dperm;
     CUDA_CHECK(cudaMalloc(&dperm, SBUF * sizeof(unsigned)));
     CUDA_CHECK(cudaMemcpy(dperm, hperm.data(), SBUF * sizeof(unsigned),
                           cudaMemcpyHostToDevice));
 
-    Result* out;
-    CUDA_CHECK(cudaMallocManaged(&out, rows * sizeof(Result)));
+    Result* out;     CUDA_CHECK(cudaMallocManaged(&out, rows * sizeof(Result)));
+    unsigned* smids; CUDA_CHECK(cudaMallocManaged(&smids, (cs + rows) * sizeof(unsigned)));
 
-    if (cluster_size > 8) allow_big_clusters((const void*)loaded_chase);
+    if (cs > 8) allow_big_clusters((const void*)loaded_chase);
 
     cudaLaunchConfig_t cfg = {};
-    cfg.gridDim = dim3(cluster_size, 1, 1);
-    cfg.blockDim = dim3(block_size, 1, 1);
+    cfg.gridDim = dim3(cs, 1, 1);
+    cfg.blockDim = dim3(a.block_size, 1, 1);
     cudaLaunchAttribute attr[1];
     attr[0].id = cudaLaunchAttributeClusterDimension;
-    attr[0].val.clusterDim.x = cluster_size;
+    attr[0].val.clusterDim.x = cs;
     attr[0].val.clusterDim.y = 1;
     attr[0].val.clusterDim.z = 1;
     cfg.attrs = attr;
     cfg.numAttrs = 1;
 
-    const char* name = a.target_remote ? "dsmem_loaded" : "smem_loaded";
-    double total_loads = (double)a.requesters * a.chasers * a.steps;
+    char name[48];
+    snprintf(name, sizeof name, "dsmem_%s", PATTERN_NAME[a.pattern]);
+    const double total_loads = (double)readers * a.block_size * a.steps;
 
-    std::vector<double> mean_cpl, gbps;  // one entry per repetition
+    std::vector<double> mean_cpl, gbps;   // one entry per repetition
     for (int rep = 0; rep < a.reps; rep++) {
+        for (int i = 0; i < rows; i++) out[i].cycles = 0;
         CUDA_CHECK(cudaLaunchKernelEx(&cfg, loaded_chase, (const unsigned*)dperm,
-                                      a.chasers, a.target_remote, a.bank_aligned,
-                                      a.warmup, a.steps, out));
+                                      a.pattern, a.bank_conflict, a.seed,
+                                      a.warmup, a.steps, out, smids));
         CUDA_CHECK(cudaDeviceSynchronize());
 
         double sum_cpl = 0, max_ns = 0;
+        int n = 0;
         for (int i = 0; i < rows; i++) {
-            print_row(name, cluster_size, 0, a.target_remote, block_size, a.steps,
-                      0, a.stride_bytes, a.seed, rep, out[i], a.chasers, i);
+            if (out[i].cycles == 0) continue;       // rank 0 in hotspot: no data
+            int rank = i / warps, warp = i % warps;
+            int target = (int)smids[cs + i];
+            print_row(name, cs, (target - rank + cs) % cs, 1, a.block_size, a.steps,
+                      0, a.stride_bytes, a.seed, rep, out[i], a.block_size, warp,
+                      rank, target, (int)smids[rank], (int)smids[target]);
             sum_cpl += (double)out[i].cycles / a.steps;
             if ((double)out[i].ns > max_ns) max_ns = (double)out[i].ns;
+            n++;
         }
-        // Average cycles per load across all warps, for this repetition.
-        mean_cpl.push_back(sum_cpl / rows);
-        // Aggregate throughput of the whole cluster: all loads, over the
-        // slowest warp's wall time (every warp started at the same barrier).
+        mean_cpl.push_back(sum_cpl / n);
+        // Aggregate throughput: all the loads, over the SLOWEST warp's wall
+        // time. Every warp started at the same cluster.sync(), so the slowest
+        // one's elapsed time is the wall time of the whole experiment.
         gbps.push_back(total_loads * sizeof(unsigned) / max_ns);  // bytes/ns = GB/s
     }
 
-    fprintf(stderr, "%s: %d requester(s) x %d chaser(s) = %d chasing warps, target %s\n",
-            name, a.requesters, a.chasers, rows, a.target_remote ? "rank 0" : "own");
+    fprintf(stderr, "%s: cluster %d, %d readers x %d threads (%d warps), bank_conflict %d\n",
+            name, cs, readers, a.block_size, warps, a.bank_conflict);
     print_stats_line("mean cy/load", mean_cpl);
-    print_stats_line("GB/s", gbps);
+    print_stats_line("GB/s total", gbps);
     {
-        // Little's law check: loads in flight = throughput x latency.
-        std::vector<double> s = mean_cpl; std::sort(s.begin(), s.end());
         std::vector<double> g = gbps;     std::sort(g.begin(), g.end());
-        double lat = s[s.size() / 2], thr = g[g.size() / 2];
-        double loads_per_cycle = thr / sizeof(unsigned) / 2.4;  // GB/s -> loads/ns -> loads/cycle @2.4 GHz
-        fprintf(stderr, "  little's law: %.2f loads/cycle x %.1f cy = %.0f loads in flight "
-                        "(%d chasing threads issued)\n",
-                loads_per_cycle, lat, loads_per_cycle * lat, a.requesters * a.chasers);
+        std::vector<double> l = mean_cpl; std::sort(l.begin(), l.end());
+        const double thr = g[g.size() / 2], lat = l[l.size() / 2];
+        // Patterns differ in reader count (hotspot has one fewer), so the
+        // per-reader rate is what makes them comparable at a glance.
+        fprintf(stderr, "  per reader   : %.3f GB/s   (%d readers)\n", thr / readers, readers);
+        const double loads_per_cycle = thr / sizeof(unsigned) / 2.4;
+        fprintf(stderr, "  little's law : %.3f loads/cycle x %.1f cy = %.0f in flight "
+                        "(%d threads issued)\n",
+                loads_per_cycle, lat, loads_per_cycle * lat, readers * a.block_size);
     }
 
-    cudaFree(dperm);
-    cudaFree(out);
+    cudaFree(dperm); cudaFree(out); cudaFree(smids);
     return 0;
 }

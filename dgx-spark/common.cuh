@@ -148,10 +148,9 @@ struct Args {
     size_t buffer_bytes = 0;  // 0 = "use the program's default"
     int stride_bytes = 0;   // 0 = random (Sattolo); > 0 = fixed stride in bytes
     // latency-many-threads.cu only:
-    int chasers = 1;        // chasing threads per requester block
-    int requesters = 1;     // requester blocks (cluster size = requesters + 1)
-    int target_remote = 1;  // 1 = chase rank 0's buffer, 0 = chase own buffer
-    int bank_aligned = 1;   // 1 = each lane on its own bank, 0 = random banks
+    int pattern = 0;        // 0 = hotspot, 1 = ring, 2 = random (drawn per warp)
+    int bank_conflict = 1;  // 1 = one shared cycle: lanes may collide in a bank
+                            // 0 = 32 per-bank cycles: a warp never conflicts
     // dsmem_matrix.cu only:
     int clusters = 1;       // clusters to launch; 4 covers every GPC at once
     int active = 0;         // which cluster's reader actually chases
@@ -191,15 +190,14 @@ void parse_args(int argc, char** argv, Args* a, const char* prog,
         else if (strcmp(f, "--mapped") == 0)        a->mapped = atoi(v);
         else if (strcmp(f, "--buffer-bytes") == 0)  a->buffer_bytes = strtoull(v, nullptr, 10);
         else if (strcmp(f, "--buffer-kib") == 0)    a->buffer_bytes = strtoull(v, nullptr, 10) * 1024;
-        else if (strcmp(f, "--chasers") == 0)       a->chasers = atoi(v);
-        else if (strcmp(f, "--requesters") == 0)    a->requesters = atoi(v);
-        else if (strcmp(f, "--bank-aligned") == 0)  a->bank_aligned = atoi(v);
+        else if (strcmp(f, "--bank-conflict") == 0) a->bank_conflict = atoi(v);
         else if (strcmp(f, "--clusters") == 0)      a->clusters = atoi(v);
         else if (strcmp(f, "--active") == 0)        a->active = atoi(v);
-        else if (strcmp(f, "--target") == 0) {
-            if (strcmp(v, "remote") == 0)      a->target_remote = 1;
-            else if (strcmp(v, "local") == 0)  a->target_remote = 0;
-            else { fprintf(stderr, "%s: --target must be remote or local\n", prog); exit(1); }
+        else if (strcmp(f, "--pattern") == 0) {
+            if (strcmp(v, "hotspot") == 0)     a->pattern = 0;
+            else if (strcmp(v, "ring") == 0)   a->pattern = 1;
+            else if (strcmp(v, "random") == 0) a->pattern = 2;
+            else { fprintf(stderr, "%s: --pattern must be hotspot, ring or random\n", prog); exit(1); }
         }
         else if (strcmp(f, "--stride") == 0) {
             if (strcmp(v, "random") == 0) a->stride_bytes = 0;
