@@ -124,3 +124,66 @@ jobs:
           requesters: [1]
           bank_aligned: [0]
         command: "./latency-many-threads --target {target} --requesters {requesters} --chasers {chasers} --bank-aligned {bank_aligned} --reps {reps} --steps {steps}"
+
+  # DSMEM BANDWIDTH: does a wider or coalesced access move more bytes than the
+  # 4-byte dependent chase above? width x access x pattern at 128 threads/SM,
+  # plus the owner sweep (cluster size) that separates the per-owner ceiling
+  # from the fabric one. Every warp is a row.
+  - config: local
+    variables:
+      reps: [11]
+      pattern: [hotspot, ring]
+      width: [4, 8, 16]
+    config_jobs:
+      - tag: "bw_{pattern}_chase_w{width}"
+        command: "./dsmem_bandwidth --pattern {pattern} --access chase --width {width} --reps {reps} --steps {steps}"
+      - tag: "bw_{pattern}_{access}_w{width}_ilp{ilp}"
+        variables:
+          access: [random, coalesced]
+          ilp: [1, 8]
+        command: "./dsmem_bandwidth --pattern {pattern} --access {access} --width {width} --ilp {ilp} --reps {reps} --steps {steps}"
+  - config: local
+    variables:
+      reps: [11]
+      cluster_size: [2, 3, 4, 6, 8, 10, 12]
+      access: [random, coalesced]
+    tag: "bw_ring_{access}_w16_ilp8_cs{cluster_size}"
+    command: "./dsmem_bandwidth --pattern ring --access {access} --width 16 --ilp 8 --cluster-size {cluster_size} --reps {reps} --steps {steps}"
+
+  # DSMEM vs the traditional copy-back through GMEM (supervisor: "how much does
+  # DSMEM cost compared to copy-back to GMEM and/or TMA?"). Every method moves
+  # S bytes from one SM's shared memory to another's, synchronization
+  # included, on the fastest (10 -> 11) and slowest (0 -> 1) DSMEM pair.
+  # Plot with: python plot_transfer.py
+  - config: local
+    variables:
+      reps: [11]
+      method: [dsmem-pull, dsmem-push, dsmem-bulk, gmem-ldst, gmem-tma]
+      mode: [pingpong, stream]
+      bytes: [16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768]
+    command: "./transfer --method {method} --mode {mode} --bytes {bytes} --src {src} --dst {dst} --reps {reps}"
+    config_jobs:
+      - tag: "transfer_{method}_{mode}_b{bytes}_p{src}-{dst}"
+        variables: {src: [10], dst: [11]}
+      - tag: "transfer_{method}_{mode}_b{bytes}_p{src}-{dst}"
+        variables: {src: [0], dst: [1]}
+  # Synchronization alone: a flag handshake with no payload, and one
+  # cluster-wide barrier.
+  - config: local
+    variables:
+      reps: [11]
+    command: "./transfer --method {method} --mode {mode} --bytes 0 --src {src} --dst {dst} --reps {reps}"
+    config_jobs:
+      - tag: "transfer_{method}_{mode}_b0_p{src}-{dst}"
+        variables: {method: [dsmem-pull, dsmem-push, gmem-ldst], mode: [pingpong, stream], src: [10], dst: [11]}
+      - tag: "transfer_{method}_{mode}_b0_p{src}-{dst}"
+        variables: {method: [dsmem-pull, dsmem-push, gmem-ldst], mode: [pingpong, stream], src: [0], dst: [1]}
+      - tag: "transfer_{method}_{mode}_b0_p{src}-{dst}"
+        variables: {method: [cluster-sync], mode: [pingpong], src: [10], dst: [11]}
+  # The real traditional baseline: one kernel launch per BFS level.
+  - config: local
+    variables:
+      reps: [11]
+      bytes: [16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768]
+    tag: "kboundary_b{bytes}"
+    command: "./kernel_boundary --bytes {bytes} --reps {reps}"

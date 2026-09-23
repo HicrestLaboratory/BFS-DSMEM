@@ -624,6 +624,88 @@
   \end{figure}
 \end{frame}
 
+% ============================================================ who you read from
+\begin{frame}{Does it matter \emph{who} you read from?}
+  \vspace{0.3em}
+  \footnotesize
+  So far every reader hit \textbf{rank 0}. That is the worst case: one owner,
+  eleven readers. What if the traffic is spread instead?
+
+  \vspace{0.35em}
+  \centering
+  \begin{tikzpicture}[scale=0.58, every node/.style={font=\scriptsize}]
+    % all vs 1
+    \node[font=\scriptsize\bfseries] at (2.6,3.5) {all vs 1 \ (\texttt{hotspot})};
+    \draw[fill=myred!30, draw=myred!80!black, rounded corners] (2.0,2.2) rectangle (3.2,2.9);
+    \node at (2.6,2.55) {rank 0};
+    \foreach \i/\x in {1/0.0, 2/1.3, 3/2.6, 4/3.9, 5/5.2} {
+      \draw[fill=gray!12, draw=gray, rounded corners] (\x,0.2) rectangle (\x+1.1,0.9);
+      \node[font=\tiny] at (\x+0.55,0.55) {rank \i};
+      \draw[->, myred, thick] (\x+0.55,0.9) -- (2.6,2.2);
+    }
+    \node[gray, font=\tiny] at (2.6,-0.35) {one door, everybody queues};
+    % all vs all
+    \node[font=\scriptsize\bfseries] at (11.4,3.5) {all vs all \ (\texttt{ring})};
+    \foreach \i/\x in {0/8.2, 1/9.5, 2/10.8, 3/12.1, 4/13.4} {
+      \draw[fill=mygreen!25, draw=mygreen!80!black, rounded corners] (\x,2.2) rectangle (\x+1.1,2.9);
+      \node[font=\tiny] at (\x+0.55,2.55) {rank \i};
+      \draw[fill=gray!12, draw=gray, rounded corners] (\x,0.2) rectangle (\x+1.1,0.9);
+      \node[font=\tiny] at (\x+0.55,0.55) {rank \i};
+    }
+    \foreach \x/\y in {8.2/9.5, 9.5/10.8, 10.8/12.1, 12.1/13.4} {
+      \draw[->, mygreen!70!black, thick] (\x+0.55,0.9) -- (\y+0.55,2.2);
+    }
+    \node[gray, font=\tiny] at (11.4,-0.35) {one door each, nobody queues};
+  \end{tikzpicture}
+
+  \vspace{0.3em}
+  \raggedright
+  \begin{itemize}\itemsep1pt
+    \item identical kernel, identical thread count --- \textbf{only the target changes}
+    \item \texttt{random}: each \emph{warp} draws its own target. Per warp, not per thread:
+          a warp issues one load for all 32 lanes, so per-thread targets would
+          also measure intra-warp fan-out and confuse the two effects.
+  \end{itemize}
+
+\end{frame}
+
+% ============================================================ the result
+\begin{frame}{Spreading the traffic: 6.3$\times$, but only under load}
+  \vspace{0.2em}
+  \centering
+  \includegraphics[width=0.86\linewidth]{images/dsmem-pattern.png}
+
+  \vspace{0.2em}
+  \raggedright
+  \footnotesize
+  \begin{columns}[T]
+  \begin{column}{0.38\textwidth}
+    \centering
+    \scriptsize
+    \begin{tabular}{lcc}
+      \toprule
+      \textbf{GB/s} & \textbf{1 thr} & \textbf{128 thr} \\
+      \midrule
+      all vs 1   & 0.50 & 0.71 \\
+      all vs all & 0.55 & \textbf{4.45} \\
+      \bottomrule
+    \end{tabular}
+  \end{column}
+  \begin{column}{0.60\textwidth}
+    \vspace{-0.4em}
+    \begin{itemize}\itemsep0pt
+      \item \textbf{At 1 thread/SM the two are the same} (0.50 vs 0.55): 12
+            threads never fill the pipe.
+      \item \textbf{Loaded, spreading is worth 6.3$\times$}: threads buy
+            all\,vs\,1 only 1.4$\times$, all\,vs\,all 8.1$\times$.
+      \item \textbf{Two ceilings:} 0.71\,GB/s \emph{per owner}, 4.45\,GB/s
+            fabric-wide --- already reached at \textbf{6 owners}.
+    \end{itemize}
+  \end{column}
+  \end{columns}
+
+\end{frame}
+
 \begin{frame}{What's next?}
   \footnotesize
   \begin{enumerate}\itemsep0pt

@@ -31,10 +31,10 @@ __device__ __forceinline__ unsigned smid() {
     return s;
 }
 
-// Size of the shared-memory chase buffer, in 4-byte elements (16 KiB).
+// Size of the shared-memory chase buffer, in 4-byte elements (32 KiB).
 // Small enough that any block can allocate it statically; large enough that
 // a chase over it is not a handful of addresses.
-constexpr int SBUF = 4096;
+constexpr int SBUF = 8192;
 
 // One measurement, written by the kernel into managed memory.
 struct Result {
@@ -149,12 +149,31 @@ struct Args {
     int stride_bytes = 0;   // 0 = random (Sattolo); > 0 = fixed stride in bytes
     // latency-many-threads.cu only:
     int pattern = 0;        // 0 = hotspot, 1 = ring, 2 = random (drawn per warp)
+    int chasers = 0;        // chasing threads per block; 0 = all of them.
+                            // Only needed to express "1 thread per SM".
     int bank_conflict = 1;  // 1 = one shared cycle: lanes may collide in a bank
                             // 0 = 32 per-bank cycles: a warp never conflicts
     // dsmem_matrix.cu only:
     int clusters = 1;       // clusters to launch; 4 covers every GPC at once
     int active = 0;         // which cluster's reader actually chases
+    // dsmem_bandwidth.cu only:
+    int width = 4;          // bytes per lane per load: 4, 8 or 16
+    int access = 0;         // 0 = chase (dependent), 1 = random, 2 = coalesced
+    int ilp = 1;            // independent loads in flight per thread
+    // transfer.cu / kernel_boundary.cu only:
+    int method = 0;         // index into TRANSFER_METHOD[]
+    int mode = 0;           // 0 = pingpong (latency), 1 = stream (bandwidth)
+    int bytes = 128;        // message size in bytes (multiple of 16)
+    int rounds = 1000;      // messages (or kernel launches) per repetition
+    int src = 10;           // sending rank; 10 -> 11 is the fastest DSMEM pair
+    int dst = 11;           // receiving rank
 };
+
+// transfer.cu: the ways to move bytes from one SM's shared memory to another's.
+const char* TRANSFER_METHOD[] = {"dsmem-pull", "dsmem-push", "dsmem-bulk",
+                                 "gmem-ldst", "gmem-tma", "cluster-sync"};
+const int N_TRANSFER_METHODS = 6;
+const char* TRANSFER_MODE[] = {"pingpong", "stream"};
 
 // The flags common to every program, for --help.
 const char* COMMON_USAGE =
@@ -191,8 +210,36 @@ void parse_args(int argc, char** argv, Args* a, const char* prog,
         else if (strcmp(f, "--buffer-bytes") == 0)  a->buffer_bytes = strtoull(v, nullptr, 10);
         else if (strcmp(f, "--buffer-kib") == 0)    a->buffer_bytes = strtoull(v, nullptr, 10) * 1024;
         else if (strcmp(f, "--bank-conflict") == 0) a->bank_conflict = atoi(v);
+        else if (strcmp(f, "--chasers") == 0)       a->chasers = atoi(v);
         else if (strcmp(f, "--clusters") == 0)      a->clusters = atoi(v);
         else if (strcmp(f, "--active") == 0)        a->active = atoi(v);
+        else if (strcmp(f, "--width") == 0)         a->width = atoi(v);
+        else if (strcmp(f, "--ilp") == 0)           a->ilp = atoi(v);
+        else if (strcmp(f, "--bytes") == 0)         a->bytes = atoi(v);
+        else if (strcmp(f, "--rounds") == 0)        a->rounds = atoi(v);
+        else if (strcmp(f, "--src") == 0)           a->src = atoi(v);
+        else if (strcmp(f, "--dst") == 0)           a->dst = atoi(v);
+        else if (strcmp(f, "--method") == 0) {
+            a->method = -1;
+            for (int m = 0; m < N_TRANSFER_METHODS; m++)
+                if (strcmp(v, TRANSFER_METHOD[m]) == 0) a->method = m;
+            if (a->method < 0) {
+                fprintf(stderr, "%s: --method must be one of dsmem-pull, dsmem-push, dsmem-bulk, "
+                                "gmem-ldst, gmem-tma, cluster-sync\n", prog);
+                exit(1);
+            }
+        }
+        else if (strcmp(f, "--mode") == 0) {
+            if (strcmp(v, "pingpong") == 0)    a->mode = 0;
+            else if (strcmp(v, "stream") == 0) a->mode = 1;
+            else { fprintf(stderr, "%s: --mode must be pingpong or stream\n", prog); exit(1); }
+        }
+        else if (strcmp(f, "--access") == 0) {
+            if (strcmp(v, "chase") == 0)          a->access = 0;
+            else if (strcmp(v, "random") == 0)    a->access = 1;
+            else if (strcmp(v, "coalesced") == 0) a->access = 2;
+            else { fprintf(stderr, "%s: --access must be chase, random or coalesced\n", prog); exit(1); }
+        }
         else if (strcmp(f, "--pattern") == 0) {
             if (strcmp(v, "hotspot") == 0)     a->pattern = 0;
             else if (strcmp(v, "ring") == 0)   a->pattern = 1;
@@ -241,8 +288,10 @@ void check_pattern(size_t n_elems, int stride_bytes) {
 // parses it directly. The metadata block records everything needed to
 // reproduce the run from the log alone.
 // `extra` lets a program add its own '#' metadata lines before the CSV header.
+// `columns` replaces the shared CSV header, for a program whose rows do not fit
+// the latency schema (dsmem_bandwidth.cu); it must end in a newline.
 void print_header(int argc, char** argv, const Args& a, size_t n_elems,
-                  const char* extra = nullptr) {
+                  const char* extra = nullptr, const char* columns = nullptr) {
     check_pattern(n_elems, a.stride_bytes);
     cudaDeviceProp prop;
     CUDA_CHECK(cudaGetDeviceProperties(&prop, 0));
@@ -269,6 +318,7 @@ void print_header(int argc, char** argv, const Args& a, size_t n_elems,
     printf("# stride_bytes: %d\n", a.stride_bytes);
     printf("# cycle_length: %zu\n", cycle_length(n_elems, a.stride_bytes));
     if (extra) fputs(extra, stdout);
+    if (columns) { fputs(columns, stdout); return; }
     printf("benchmark,cluster_size,distance,mapped,block_size,steps,"
            "buffer_bytes,stride_bytes,seed,rep,cycles,ns,cycles_per_load,"
            "ns_per_load,ghz,chasers,warp,reader,target,smid_reader,smid_target\n");

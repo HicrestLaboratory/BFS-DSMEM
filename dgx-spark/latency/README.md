@@ -16,6 +16,9 @@ only medians; that file is kept untouched as the reference implementation.
 | `dram` | global memory not in any cache |
 | `chain` | the same chase at any buffer size (`--buffer-kib`), for the latency-vs-working-set curve |
 | `latency-many-threads` | DSMEM **under load**: `--requesters` blocks × `--chasers` threads all chasing rank 0's buffer; one row per warp; `--target local` is the own-SRAM control |
+| `dsmem_bandwidth` | DSMEM **bytes/s**: `--width 4\|8\|16` bytes per lane × `--access chase\|random\|coalesced` × `--ilp` loads in flight × `--pattern`; own CSV schema (one row per warp, with start/end on a shared clock) |
+| `transfer` | S bytes from one SM's SMEM into another's, synchronization included: `--method dsmem-pull\|dsmem-push\|dsmem-bulk\|gmem-ldst\|gmem-tma\|cluster-sync` × `--mode pingpong` (one-way latency) `\|stream` (bandwidth) × `--bytes`, on the rank pair `--src`/`--dst`; every run is verified before it is timed |
+| `kernel_boundary` | the level-synchronous baseline: one kernel launch per level handing S bytes through global memory (back-to-back launches, CUDA graph, and host check per level) |
 
 All shared code (chase kernel, Sattolo cycle, CLI parsing, CSV output) is in
 `common.cuh`; each `.cu` is only its kernel and a `main()`.

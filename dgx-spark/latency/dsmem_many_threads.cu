@@ -81,8 +81,8 @@ __device__ __forceinline__ unsigned mix(unsigned x) {
 }
 
 __global__ void loaded_chase(const unsigned* __restrict__ perm, int pattern,
-                             int bank_conflict, int seed, int warmup, int steps,
-                             Result* out, unsigned* smids) {
+                             int bank_conflict, int chasers, int seed, int warmup,
+                             int steps, Result* out, unsigned* smids) {
     __shared__ unsigned sbuf[SBUF];
     cg::cluster_group cluster = cg::this_cluster();
     const int cs = (int)cluster.num_blocks();
@@ -108,7 +108,7 @@ __global__ void loaded_chase(const unsigned* __restrict__ perm, int pattern,
         if (target >= rank) target++;
     }
 
-    if (target >= 0) {
+    if (target >= 0 && (int)threadIdx.x < chasers) {
         // Distinct entry points, or the lanes would read one address and the
         // hardware would broadcast instead of making independent requests.
         // Bank-conflict-free: lane l must start on an element of bank l.
@@ -136,7 +136,8 @@ int main(int argc, char** argv) {
                "  --cluster-size N  blocks in the cluster, 2..12          (default 12)\n"
                "  --block-size N    threads per block, multiple of 32     (default 128)\n"
                "  --pattern P       hotspot | ring | random               (default hotspot)\n"
-               "  --bank-conflict N 1 = allow intra-warp bank conflicts   (default 1)\n");
+               "  --bank-conflict N 1 = allow intra-warp bank conflicts   (default 1)\n"
+               "  --chasers N       chasing threads per block; 0 = all      (default 0)\n");
     const int cs = a.cluster_size;
     if (cs < 2 || cs > 12) {
         fprintf(stderr, "latency-many-threads: --cluster-size must be 2..12 on GB10\n");
@@ -146,16 +147,22 @@ int main(int argc, char** argv) {
         fprintf(stderr, "latency-many-threads: --block-size must be a multiple of 32, 32..1024\n");
         return 1;
     }
+    if (a.chasers < 0 || a.chasers > a.block_size) {
+        fprintf(stderr, "latency-many-threads: --chasers must be 0..--block-size\n");
+        return 1;
+    }
+    if (a.chasers == 0) a.chasers = a.block_size;     // 0 means "every thread"
     const int warps = a.block_size / 32;
+    const int active_warps = (a.chasers + 31) / 32;   // warps that hold a result
     // hotspot keeps rank 0 passive; ring and random make every rank a reader.
     const int readers = (a.pattern == PAT_HOTSPOT) ? cs - 1 : cs;
     const int rows = cs * warps;           // rank 0's slots stay empty in hotspot
 
     char extra[320];
     snprintf(extra, sizeof extra,
-             "# pattern: %s\n# cluster_size: %d\n# readers: %d\n# warps_per_block: %d\n"
-             "# bank_conflict: %d\n",
-             PATTERN_NAME[a.pattern], cs, readers, warps, a.bank_conflict);
+             "# pattern: %s\n# cluster_size: %d\n# readers: %d\n# chasers_per_block: %d\n"
+             "# active_warps: %d\n# bank_conflict: %d\n",
+             PATTERN_NAME[a.pattern], cs, readers, a.chasers, active_warps, a.bank_conflict);
     print_header(argc, argv, a, SBUF, extra);
 
     std::mt19937 rng(a.seed);
@@ -185,14 +192,14 @@ int main(int argc, char** argv) {
 
     char name[48];
     snprintf(name, sizeof name, "dsmem_%s", PATTERN_NAME[a.pattern]);
-    const double total_loads = (double)readers * a.block_size * a.steps;
+    const double total_loads = (double)readers * a.chasers * a.steps;
 
     std::vector<double> mean_cpl, gbps;   // one entry per repetition
     for (int rep = 0; rep < a.reps; rep++) {
         for (int i = 0; i < rows; i++) out[i].cycles = 0;
         CUDA_CHECK(cudaLaunchKernelEx(&cfg, loaded_chase, (const unsigned*)dperm,
-                                      a.pattern, a.bank_conflict, a.seed,
-                                      a.warmup, a.steps, out, smids));
+                                      a.pattern, a.bank_conflict, a.chasers,
+                                      a.seed, a.warmup, a.steps, out, smids));
         CUDA_CHECK(cudaDeviceSynchronize());
 
         double sum_cpl = 0, max_ns = 0;
@@ -215,8 +222,8 @@ int main(int argc, char** argv) {
         gbps.push_back(total_loads * sizeof(unsigned) / max_ns);  // bytes/ns = GB/s
     }
 
-    fprintf(stderr, "%s: cluster %d, %d readers x %d threads (%d warps), bank_conflict %d\n",
-            name, cs, readers, a.block_size, warps, a.bank_conflict);
+    fprintf(stderr, "%s: cluster %d, %d readers x %d chasing threads, bank_conflict %d\n",
+            name, cs, readers, a.chasers, a.bank_conflict);
     print_stats_line("mean cy/load", mean_cpl);
     print_stats_line("GB/s total", gbps);
     {
@@ -229,7 +236,7 @@ int main(int argc, char** argv) {
         const double loads_per_cycle = thr / sizeof(unsigned) / 2.4;
         fprintf(stderr, "  little's law : %.3f loads/cycle x %.1f cy = %.0f in flight "
                         "(%d threads issued)\n",
-                loads_per_cycle, lat, loads_per_cycle * lat, readers * a.block_size);
+                loads_per_cycle, lat, loads_per_cycle * lat, readers * a.chasers);
     }
 
     cudaFree(dperm); cudaFree(out); cudaFree(smids);
