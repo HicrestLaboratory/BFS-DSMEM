@@ -38,8 +38,16 @@
 //   --cluster-size N   blocks in the cluster, 2..12              (default 12)
 //   --block-size N     threads per block, multiple of 32         (default 128 = 4 warps)
 //   --pattern P        hotspot | ring | random                   (default hotspot)
-//   --bank-conflict 1  one shared cycle, lanes may collide in a bank (default)
-//   --bank-conflict 0  32 per-bank cycles, a warp never conflicts with itself
+//   --access A         pchase | coalesced                        (default pchase)
+//
+// THE ACCESS. Both are dependent chases (one load in flight per thread); they
+// differ only in where the 32 lanes of a warp read at the same step:
+//
+//   pchase     one random cycle, every lane at its own random entry point: an
+//              instruction touches ~32 different lines, ~32 separate requests.
+//   coalesced  buf[i] = i + 32 and lane l starts at base + l, so at every step
+//              the lanes read 32 consecutive words, ONE 128 B line: the
+//              hardware merges them into a single request.
 //
 // Every WARP times its own chase and is emitted as its own CSV row: the 32
 // lanes of a warp run in lockstep and hold the same measurement, so per-lane
@@ -58,19 +66,6 @@ namespace cg = cooperative_groups;
 enum { PAT_HOTSPOT = 0, PAT_RING = 1, PAT_RANDOM = 2 };
 static const char* PATTERN_NAME[] = {"hotspot", "ring", "random"};
 
-// 32 independent random cycles, one per shared-memory bank (bank = element
-// index mod 32). Lane l walks bank l's cycle and never leaves it, so the 32
-// lanes of one load instruction always hit 32 different banks. Used only when
-// --bank-conflict 0.
-void make_bank_cycles(std::vector<unsigned>& p, std::mt19937& rng) {
-    const int per_bank = SBUF / 32;  // 128 elements in each bank
-    std::vector<unsigned> c(per_bank);
-    for (int b = 0; b < 32; b++) {
-        make_cycle(c, rng);  // c[k] = successor of k inside this bank's cycle
-        for (int k = 0; k < per_bank; k++) p[b + 32 * k] = b + 32 * c[k];
-    }
-}
-
 // A cheap, well-mixed hash: used both to pick random targets and to scatter
 // starting offsets. Deterministic, so a run is reproducible from --seed.
 __device__ __forceinline__ unsigned mix(unsigned x) {
@@ -81,7 +76,7 @@ __device__ __forceinline__ unsigned mix(unsigned x) {
 }
 
 __global__ void loaded_chase(const unsigned* __restrict__ perm, int pattern,
-                             int bank_conflict, int chasers, int seed, int warmup,
+                             int coalesced, int chasers, int seed, int warmup,
                              int steps, Result* out, unsigned* smids) {
     __shared__ unsigned sbuf[SBUF];
     cg::cluster_group cluster = cg::this_cluster();
@@ -109,12 +104,13 @@ __global__ void loaded_chase(const unsigned* __restrict__ perm, int pattern,
     }
 
     if (target >= 0 && (int)threadIdx.x < chasers) {
-        // Distinct entry points, or the lanes would read one address and the
-        // hardware would broadcast instead of making independent requests.
-        // Bank-conflict-free: lane l must start on an element of bank l.
-        unsigned start = bank_conflict
-            ? (mix((unsigned)(threadIdx.x + 1024 * rank + 7 * seed)) % SBUF)
-            : (unsigned)(lane + 32 * warp);
+        // pchase: distinct random entry points, or the lanes would read one
+        // address and the hardware would broadcast instead of making
+        // independent requests. coalesced: lane l at base + l, each warp on
+        // its own line.
+        unsigned start = coalesced
+            ? (unsigned)((32 * (rank * warps + warp) + lane) % SBUF)
+            : (mix((unsigned)(threadIdx.x + 1024 * rank + 7 * seed)) % SBUF);
         Result r;
         const unsigned* buf = cluster.map_shared_rank((const unsigned*)sbuf, target);
         warm_then_chase(buf, start, warmup, steps, &r);
@@ -136,7 +132,7 @@ int main(int argc, char** argv) {
                "  --cluster-size N  blocks in the cluster, 2..12          (default 12)\n"
                "  --block-size N    threads per block, multiple of 32     (default 128)\n"
                "  --pattern P       hotspot | ring | random               (default hotspot)\n"
-               "  --bank-conflict N 1 = allow intra-warp bank conflicts   (default 1)\n"
+               "  --access A        pchase | coalesced                    (default pchase)\n"
                "  --chasers N       chasing threads per block; 0 = all      (default 0)\n");
     const int cs = a.cluster_size;
     if (cs < 2 || cs > 12) {
@@ -151,6 +147,16 @@ int main(int argc, char** argv) {
         fprintf(stderr, "latency-many-threads: --chasers must be 0..--block-size\n");
         return 1;
     }
+    if (a.access == 1) {
+        fprintf(stderr, "latency-many-threads: --access must be pchase or coalesced\n");
+        return 1;
+    }
+    const bool coalesced = (a.access == 2);
+    if (coalesced && a.stride_bytes) {
+        fprintf(stderr, "latency-many-threads: --stride only applies to --access pchase\n");
+        return 1;
+    }
+    const char* access_name = coalesced ? "coalesced" : "pchase";
     if (a.chasers == 0) a.chasers = a.block_size;     // 0 means "every thread"
     const int warps = a.block_size / 32;
     const int active_warps = (a.chasers + 31) / 32;   // warps that hold a result
@@ -161,14 +167,14 @@ int main(int argc, char** argv) {
     char extra[320];
     snprintf(extra, sizeof extra,
              "# pattern: %s\n# cluster_size: %d\n# readers: %d\n# chasers_per_block: %d\n"
-             "# active_warps: %d\n# bank_conflict: %d\n",
-             PATTERN_NAME[a.pattern], cs, readers, a.chasers, active_warps, a.bank_conflict);
+             "# active_warps: %d\n# access: %s\n",
+             PATTERN_NAME[a.pattern], cs, readers, a.chasers, active_warps, access_name);
     print_header(argc, argv, a, SBUF, extra);
 
     std::mt19937 rng(a.seed);
     std::vector<unsigned> hperm(SBUF);
-    if (a.bank_conflict) make_pattern(hperm, rng, a.stride_bytes);
-    else                 make_bank_cycles(hperm, rng);
+    if (coalesced) for (int i = 0; i < SBUF; i++) hperm[i] = (i + 32) % SBUF;  // one line per step
+    else           make_pattern(hperm, rng, a.stride_bytes);
     unsigned* dperm;
     CUDA_CHECK(cudaMalloc(&dperm, SBUF * sizeof(unsigned)));
     CUDA_CHECK(cudaMemcpy(dperm, hperm.data(), SBUF * sizeof(unsigned),
@@ -191,14 +197,16 @@ int main(int argc, char** argv) {
     cfg.numAttrs = 1;
 
     char name[48];
-    snprintf(name, sizeof name, "dsmem_%s", PATTERN_NAME[a.pattern]);
+    // pchase keeps the historical name, so old and new logs stay comparable
+    snprintf(name, sizeof name, coalesced ? "dsmem_%s_coalesced" : "dsmem_%s",
+             PATTERN_NAME[a.pattern]);
     const double total_loads = (double)readers * a.chasers * a.steps;
 
     std::vector<double> mean_cpl, gbps;   // one entry per repetition
     for (int rep = 0; rep < a.reps; rep++) {
         for (int i = 0; i < rows; i++) out[i].cycles = 0;
         CUDA_CHECK(cudaLaunchKernelEx(&cfg, loaded_chase, (const unsigned*)dperm,
-                                      a.pattern, a.bank_conflict, a.chasers,
+                                      a.pattern, (int)coalesced, a.chasers,
                                       a.seed, a.warmup, a.steps, out, smids));
         CUDA_CHECK(cudaDeviceSynchronize());
 
@@ -222,8 +230,8 @@ int main(int argc, char** argv) {
         gbps.push_back(total_loads * sizeof(unsigned) / max_ns);  // bytes/ns = GB/s
     }
 
-    fprintf(stderr, "%s: cluster %d, %d readers x %d chasing threads, bank_conflict %d\n",
-            name, cs, readers, a.chasers, a.bank_conflict);
+    fprintf(stderr, "%s: cluster %d, %d readers x %d chasing threads, access %s\n",
+            name, cs, readers, a.chasers, access_name);
     print_stats_line("mean cy/load", mean_cpl);
     print_stats_line("GB/s total", gbps);
     {

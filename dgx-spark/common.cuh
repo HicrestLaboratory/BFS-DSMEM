@@ -151,8 +151,6 @@ struct Args {
     int pattern = 0;        // 0 = hotspot, 1 = ring, 2 = random (drawn per warp)
     int chasers = 0;        // chasing threads per block; 0 = all of them.
                             // Only needed to express "1 thread per SM".
-    int bank_conflict = 1;  // 1 = one shared cycle: lanes may collide in a bank
-                            // 0 = 32 per-bank cycles: a warp never conflicts
     // dsmem_matrix.cu only:
     int clusters = 1;       // clusters to launch; 4 covers every GPC at once
     int active = 0;         // which cluster's reader actually chases
@@ -209,7 +207,6 @@ void parse_args(int argc, char** argv, Args* a, const char* prog,
         else if (strcmp(f, "--mapped") == 0)        a->mapped = atoi(v);
         else if (strcmp(f, "--buffer-bytes") == 0)  a->buffer_bytes = strtoull(v, nullptr, 10);
         else if (strcmp(f, "--buffer-kib") == 0)    a->buffer_bytes = strtoull(v, nullptr, 10) * 1024;
-        else if (strcmp(f, "--bank-conflict") == 0) a->bank_conflict = atoi(v);
         else if (strcmp(f, "--chasers") == 0)       a->chasers = atoi(v);
         else if (strcmp(f, "--clusters") == 0)      a->clusters = atoi(v);
         else if (strcmp(f, "--active") == 0)        a->active = atoi(v);
@@ -235,7 +232,7 @@ void parse_args(int argc, char** argv, Args* a, const char* prog,
             else { fprintf(stderr, "%s: --mode must be pingpong or stream\n", prog); exit(1); }
         }
         else if (strcmp(f, "--access") == 0) {
-            if (strcmp(v, "chase") == 0)          a->access = 0;
+            if (strcmp(v, "chase") == 0 || strcmp(v, "pchase") == 0) a->access = 0;
             else if (strcmp(v, "random") == 0)    a->access = 1;
             else if (strcmp(v, "coalesced") == 0) a->access = 2;
             else { fprintf(stderr, "%s: --access must be chase, random or coalesced\n", prog); exit(1); }
