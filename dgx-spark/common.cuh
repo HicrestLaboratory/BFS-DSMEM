@@ -148,7 +148,7 @@ struct Args {
     size_t buffer_bytes = 0;  // 0 = "use the program's default"
     int stride_bytes = 0;   // 0 = random (Sattolo); > 0 = fixed stride in bytes
     // latency-many-threads.cu only:
-    int pattern = 0;        // 0 = hotspot, 1 = ring, 2 = random (drawn per warp)
+    int pattern = 0;        // 0 = broadcast, 1 = ring, 2 = random (drawn per warp)
     int chasers = 0;        // chasing threads per block; 0 = all of them.
                             // Only needed to express "1 thread per SM".
     // dsmem_matrix.cu only:
@@ -238,10 +238,10 @@ void parse_args(int argc, char** argv, Args* a, const char* prog,
             else { fprintf(stderr, "%s: --access must be chase, random or coalesced\n", prog); exit(1); }
         }
         else if (strcmp(f, "--pattern") == 0) {
-            if (strcmp(v, "hotspot") == 0)     a->pattern = 0;
+            if (strcmp(v, "broadcast") == 0)     a->pattern = 0;
             else if (strcmp(v, "ring") == 0)   a->pattern = 1;
             else if (strcmp(v, "random") == 0) a->pattern = 2;
-            else { fprintf(stderr, "%s: --pattern must be hotspot, ring or random\n", prog); exit(1); }
+            else { fprintf(stderr, "%s: --pattern must be broadcast, ring or random\n", prog); exit(1); }
         }
         else if (strcmp(f, "--stride") == 0) {
             if (strcmp(v, "random") == 0) a->stride_bytes = 0;

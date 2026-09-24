@@ -14,14 +14,14 @@
 // THE PATTERN. --pattern decides whose shared memory each block reads, and
 // nothing else changes between the three:
 //
-//   hotspot   every block reads rank 0; rank 0 itself only owns memory.
+//   broadcast   every block reads rank 0; rank 0 itself only owns memory.
 //             Maximum concentration: cluster_size-1 readers, ONE owner.
 //   ring      rank k reads rank k+1 (mod cluster_size). Maximum spread:
 //             every rank is a reader AND an owner, exactly one reader each.
 //   random    each WARP draws its own target rank (never its own). Realistic
 //             imbalance: about one reader per owner, but clumped by luck.
 //
-// hotspot vs ring at the same thread count is the experiment that matters. If
+// broadcast vs ring at the same thread count is the experiment that matters. If
 // ring delivers ~N times the aggregate throughput, the saturation point is a
 // PER-OWNER limit and spreading ownership multiplies bandwidth. If ring
 // delivers the same, the fabric itself is the ceiling and no partitioning
@@ -29,15 +29,15 @@
 //
 // WHY THE TARGET IS DRAWN PER WARP. A warp issues one load instruction for
 // all 32 lanes. If every lane addresses the same peer, that is one coherent
-// request to one remote SM, exactly like hotspot but aimed elsewhere. If
+// request to one remote SM, exactly like broadcast but aimed elsewhere. If
 // lanes addressed different peers, one instruction would have to fan out to
 // up to 32 SMs, and a bad result could not be attributed to spreading rather
-// than to fan-out. Per-warp changes exactly one variable versus hotspot.
+// than to fan-out. Per-warp changes exactly one variable versus broadcast.
 // (Per-thread fan-out is a separate experiment, deliberately not done here.)
 //
 //   --cluster-size N   blocks in the cluster, 2..12              (default 12)
 //   --block-size N     threads per block, multiple of 32         (default 128 = 4 warps)
-//   --pattern P        hotspot | ring | random                   (default hotspot)
+//   --pattern P        broadcast | ring | random                   (default broadcast)
 //   --access A         pchase | coalesced                        (default pchase)
 //
 // THE ACCESS. Both are dependent chases (one load in flight per thread); they
@@ -63,8 +63,8 @@
 
 namespace cg = cooperative_groups;
 
-enum { PAT_HOTSPOT = 0, PAT_RING = 1, PAT_RANDOM = 2 };
-static const char* PATTERN_NAME[] = {"hotspot", "ring", "random"};
+enum { PAT_broadcast = 0, PAT_RING = 1, PAT_RANDOM = 2 };
+static const char* PATTERN_NAME[] = {"broadcast", "ring", "random"};
 
 // A cheap, well-mixed hash: used both to pick random targets and to scatter
 // starting offsets. Deterministic, so a run is reproducible from --seed.
@@ -93,7 +93,7 @@ __global__ void loaded_chase(const unsigned* __restrict__ perm, int pattern,
 
     // Who does this warp read from? -1 means "this block does not read".
     int target = -1;
-    if (pattern == PAT_HOTSPOT) {
+    if (pattern == PAT_broadcast) {
         if (rank != 0) target = 0;                  // rank 0 only owns memory
     } else if (pattern == PAT_RING) {
         target = (rank + 1) % cs;
@@ -131,7 +131,7 @@ int main(int argc, char** argv) {
     parse_args(argc, argv, &a, "latency-many-threads",
                "  --cluster-size N  blocks in the cluster, 2..12          (default 12)\n"
                "  --block-size N    threads per block, multiple of 32     (default 128)\n"
-               "  --pattern P       hotspot | ring | random               (default hotspot)\n"
+               "  --pattern P       broadcast | ring | random               (default broadcast)\n"
                "  --access A        pchase | coalesced                    (default pchase)\n"
                "  --chasers N       chasing threads per block; 0 = all      (default 0)\n");
     const int cs = a.cluster_size;
@@ -160,9 +160,9 @@ int main(int argc, char** argv) {
     if (a.chasers == 0) a.chasers = a.block_size;     // 0 means "every thread"
     const int warps = a.block_size / 32;
     const int active_warps = (a.chasers + 31) / 32;   // warps that hold a result
-    // hotspot keeps rank 0 passive; ring and random make every rank a reader.
-    const int readers = (a.pattern == PAT_HOTSPOT) ? cs - 1 : cs;
-    const int rows = cs * warps;           // rank 0's slots stay empty in hotspot
+    // broadcast keeps rank 0 passive; ring and random make every rank a reader.
+    const int readers = (a.pattern == PAT_broadcast) ? cs - 1 : cs;
+    const int rows = cs * warps;           // rank 0's slots stay empty in broadcast
 
     char extra[320];
     snprintf(extra, sizeof extra,
@@ -213,7 +213,7 @@ int main(int argc, char** argv) {
         double sum_cpl = 0, max_ns = 0;
         int n = 0;
         for (int i = 0; i < rows; i++) {
-            if (out[i].cycles == 0) continue;       // rank 0 in hotspot: no data
+            if (out[i].cycles == 0) continue;       // rank 0 in broadcast: no data
             int rank = i / warps, warp = i % warps;
             int target = (int)smids[cs + i];
             print_row(name, cs, (target - rank + cs) % cs, 1, a.block_size, a.steps,
@@ -238,7 +238,7 @@ int main(int argc, char** argv) {
         std::vector<double> g = gbps;     std::sort(g.begin(), g.end());
         std::vector<double> l = mean_cpl; std::sort(l.begin(), l.end());
         const double thr = g[g.size() / 2], lat = l[l.size() / 2];
-        // Patterns differ in reader count (hotspot has one fewer), so the
+        // Patterns differ in reader count (broadcast has one fewer), so the
         // per-reader rate is what makes them comparable at a glance.
         fprintf(stderr, "  per reader   : %.3f GB/s   (%d readers)\n", thr / readers, readers);
         const double loads_per_cycle = thr / sizeof(unsigned) / 2.4;

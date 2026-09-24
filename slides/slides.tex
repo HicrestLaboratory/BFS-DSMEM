@@ -616,57 +616,57 @@
 %   \end{itemize}
 % \end{frame}
 
+% ============================================================ who you read from
+\begin{frame}{Throughput Benchmark}
+  \vspace{0.3em}
+  \footnotesize
+  So far: \emph{one} thread reading \emph{one} peer. Now: \emph{many} threads, reading the
+  \emph{same} peer or \emph{different} peers.
+
+  \vspace{0.2em}
+  \centering
+  \begin{tikzpicture}[scale=0.58,
+      rk/.style={circle, draw, thick, minimum size=0.78cm, inner sep=0pt, font=\tiny, align=center}]
+    % all vs 1
+    \node[font=\scriptsize\bfseries] at (3.0,3.7) {all vs 1 \ (\texttt{broadcast})};
+    \node[rk, fill=myred!30, draw=myred!80!black] (b0) at (3.0,2.4) {rank\\0};
+    \foreach \i/\x in {1/0.0, 2/1.5, 3/3.0, 4/4.5, 5/6.0} {
+      \node[rk, fill=gray!12, draw=gray] (b\i) at (\x,0.2) {rank\\\i};
+      \draw[->, myred, thick] (b\i) -- (b0);
+    }
+    % all vs all
+    \node[font=\scriptsize\bfseries] at (12.5,3.7) {all vs all \ (\texttt{ring})};
+    \foreach \i/\x in {0/9.5, 1/11.0, 2/12.5, 3/14.0, 4/15.5} {
+      \node[rk, fill=mygreen!25, draw=mygreen!80!black] (t\i) at (\x,2.4) {rank\\\i};
+      \node[rk, fill=gray!12, draw=gray] (r\i) at (\x,0.2) {rank\\\i};
+    }
+    \foreach \x/\y in {0/1, 1/2, 2/3, 3/4} {
+      \draw[->, mygreen!70!black, thick] (r\x) -- (t\y);
+    }
+    % wrap-around: rank 4 reads rank 0
+    \draw[->, mygreen!70!black, thick, rounded corners=4pt]
+      (r4.south) |- (8.55,-0.95) |- (t0.west);
+  \end{tikzpicture}
+
+  \vspace{0.1em}
+  \raggedright
+  \begin{itemize}\itemsep1pt
+    \item One cluster, one block per SM, 256 threads per block.
+    \item Two access patterns, both dependent chases (one load in flight per thread):
+      \begin{itemize}\footnotesize\itemsep0pt
+        \item \texttt{pchase}: each lane starts from a different random position in the same cycle, resulting in approximately 32 independent dependent-load chains per warp.
+        \item \texttt{coalesced}: lane $l$ starts at $\mathit{base}+l$ $\Rightarrow$ a warp reads
+              32 consecutive words, one 128\,B line, a \emph{single} request.
+      \end{itemize}
+  \end{itemize}
+\end{frame}
+
 \begin{frame}{Latency Benchmark -- Many Threads}
 \vspace{0.2em}
   \centering
   \begin{figure}
     \includegraphics[width=0.99\linewidth]{images/loaded_latency.png}
   \end{figure}
-\end{frame}
-
-% ============================================================ who you read from
-\begin{frame}{Does it matter \emph{who} you read from?}
-  \vspace{0.3em}
-  \footnotesize
-  So far every reader hit \textbf{rank 0}. That is the worst case: one owner,
-  eleven readers. What if the traffic is spread instead?
-
-  \vspace{0.35em}
-  \centering
-  \begin{tikzpicture}[scale=0.58, every node/.style={font=\scriptsize}]
-    % all vs 1
-    \node[font=\scriptsize\bfseries] at (2.6,3.5) {all vs 1 \ (\texttt{hotspot})};
-    \draw[fill=myred!30, draw=myred!80!black, rounded corners] (2.0,2.2) rectangle (3.2,2.9);
-    \node at (2.6,2.55) {rank 0};
-    \foreach \i/\x in {1/0.0, 2/1.3, 3/2.6, 4/3.9, 5/5.2} {
-      \draw[fill=gray!12, draw=gray, rounded corners] (\x,0.2) rectangle (\x+1.1,0.9);
-      \node[font=\tiny] at (\x+0.55,0.55) {rank \i};
-      \draw[->, myred, thick] (\x+0.55,0.9) -- (2.6,2.2);
-    }
-    \node[gray, font=\tiny] at (2.6,-0.35) {one door, everybody queues};
-    % all vs all
-    \node[font=\scriptsize\bfseries] at (11.4,3.5) {all vs all \ (\texttt{ring})};
-    \foreach \i/\x in {0/8.2, 1/9.5, 2/10.8, 3/12.1, 4/13.4} {
-      \draw[fill=mygreen!25, draw=mygreen!80!black, rounded corners] (\x,2.2) rectangle (\x+1.1,2.9);
-      \node[font=\tiny] at (\x+0.55,2.55) {rank \i};
-      \draw[fill=gray!12, draw=gray, rounded corners] (\x,0.2) rectangle (\x+1.1,0.9);
-      \node[font=\tiny] at (\x+0.55,0.55) {rank \i};
-    }
-    \foreach \x/\y in {8.2/9.5, 9.5/10.8, 10.8/12.1, 12.1/13.4} {
-      \draw[->, mygreen!70!black, thick] (\x+0.55,0.9) -- (\y+0.55,2.2);
-    }
-    \node[gray, font=\tiny] at (11.4,-0.35) {one door each, nobody queues};
-  \end{tikzpicture}
-
-  \vspace{0.3em}
-  \raggedright
-  \begin{itemize}\itemsep1pt
-    \item identical kernel, identical thread count --- \textbf{only the target changes}
-    \item \texttt{random}: each \emph{warp} draws its own target. Per warp, not per thread:
-          a warp issues one load for all 32 lanes, so per-thread targets would
-          also measure intra-warp fan-out and confuse the two effects.
-  \end{itemize}
-
 \end{frame}
 
 % ============================================================ the result
@@ -718,6 +718,7 @@
       \end{itemize}
     \item \textbf{State-of-the-art GPU-accelerated BFS}
       \begin{itemize}\scriptsize\itemsep0pt
+        \item Microbenchmark access pattern of a BFS?
         \item Graph partitioning strategies
         \item Work-stealing techniques
         \item Data types and data structures for high-performance BFS
