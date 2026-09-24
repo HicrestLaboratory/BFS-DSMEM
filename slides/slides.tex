@@ -651,59 +651,87 @@
   \vspace{0.1em}
   \raggedright
   \begin{itemize}\itemsep1pt
-    \item One cluster, one block per SM, 256 threads per block.
     \item Two access patterns:
       \begin{itemize}\footnotesize\itemsep0pt
-        \item \texttt{pchase}: each lane starts from a different random position in the same cycle, resulting in approximately 32 independent dependent-load chains per warp.
+        \item \texttt{random}: each lane starts from a different random position in the same cycle, resulting in approximately 32 load chains per warp.
         \item \texttt{coalesced}: lane $l$ starts at $\mathit{base}+l$ $\Rightarrow$ a warp reads
               32 consecutive words, one 128\,B line, a \emph{single} request.
       \end{itemize}
   \end{itemize}
 \end{frame}
 
-\begin{frame}{Latency Benchmark -- Many Threads}
-\vspace{0.2em}
-  \centering
-  \begin{figure}
-    \includegraphics[width=0.99\linewidth]{images/loaded_latency.png}
-  \end{figure}
+\begin{frame}{Throughput Benchmark -- Broadcast}
+  \vspace{0.2em}
+  \footnotesize
+  In every cluster, every thread of ranks $1\ldots N{-}1$ reads \textbf{rank 0}'s shared memory.\\
+  1 block per SM, 256 threads per block.
+
+  \vspace{0.5em}
+  \begin{columns}[T]
+    \begin{column}{0.5\linewidth}
+      \centering
+      \textbf{One cluster}\\[0.2em]
+      \includegraphics[width=\linewidth]{images/throughput-broadcast.png}\\[0.2em]
+      \scriptsize 1 cluster of $N$ blocks: only $N$ SMs busy.
+    \end{column}
+    \begin{column}{0.5\linewidth}
+      \centering
+      \textbf{Whole GPU}\\[0.2em]
+      \includegraphics[width=\linewidth]{images/throughput-broadcast-gpu.png}\\[0.2em]
+      \scriptsize $48/N$ clusters of $N$ blocks side by side: all 48 SMs busy.
+    \end{column}
+  \end{columns}
 \end{frame}
 
 % ============================================================ the result
-\begin{frame}{Spreading the traffic: 6.3$\times$, but only under load}
+\begin{frame}{Throughput Benchmark -- Ring}
   \vspace{0.2em}
-  \centering
-  \includegraphics[width=0.86\linewidth]{images/dsmem-pattern.png}
-
-  \vspace{0.2em}
-  \raggedright
   \footnotesize
-  \begin{columns}[T]
-  \begin{column}{0.38\textwidth}
-    \centering
-    \scriptsize
-    \begin{tabular}{lcc}
-      \toprule
-      \textbf{GB/s} & \textbf{1 thr} & \textbf{128 thr} \\
-      \midrule
-      all vs 1   & 0.50 & 0.71 \\
-      all vs all & 0.55 & \textbf{4.45} \\
-      \bottomrule
-    \end{tabular}
-  \end{column}
-  \begin{column}{0.60\textwidth}
-    \vspace{-0.4em}
-    \begin{itemize}\itemsep0pt
-      \item \textbf{At 1 thread/SM the two are the same} (0.50 vs 0.55): 12
-            threads never fill the pipe.
-      \item \textbf{Loaded, spreading is worth 6.3$\times$}: threads buy
-            all\,vs\,1 only 1.4$\times$, all\,vs\,all 8.1$\times$.
-      \item \textbf{Two ceilings:} 0.71\,GB/s \emph{per owner}, 4.45\,GB/s
-            fabric-wide --- already reached at \textbf{6 owners}.
-    \end{itemize}
-  \end{column}
-  \end{columns}
+  In every cluster, every thread of rank $k$ reads \textbf{rank $k{+}1$} (mod $N$): one reader per owner.\\
+  1 block per SM, 256 threads per block.
 
+  \vspace{0.5em}
+  \begin{columns}[T]
+    \begin{column}{0.5\linewidth}
+      \centering
+      \textbf{One cluster}\\[0.2em]
+      \includegraphics[width=\linewidth]{images/throughput-ring.png}\\[0.2em]
+      \scriptsize 1 cluster of $N$ blocks: only $N$ SMs busy.
+    \end{column}
+    \begin{column}{0.5\linewidth}
+      \centering
+      \textbf{Whole GPU}\\[0.2em]
+      \includegraphics[width=\linewidth]{images/throughput-ring-gpu.png}\\[0.2em]
+      \scriptsize $48/N$ clusters of $N$ blocks side by side: all 48 SMs busy.
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Throughput Benchmark -- Summary}
+  \footnotesize
+
+  \vspace{2em}
+  \centering
+  \begin{tabular}{lrrl}
+    \toprule
+    scope & \textbf{coalesced} & random & what sets the limit \\
+    \midrule
+    one owner SM & \textbf{9.8 GB/s} & 0.67 GB/s & the owner: 128\,B every $\sim$31\,cy $\approx$ 4.1\,B/cy \\
+    one GPC (12 SMs) & \textbf{$\sim$53 GB/s} & 4.3 GB/s & the GPC's SM-to-SM network \\
+    whole chip (48 SMs) & \textbf{$\sim$206 GB/s} & 16 GB/s & 4 GPCs, independent \\
+    \bottomrule
+  \end{tabular}
+
+  \vspace{0.8em}
+  \raggedright
+  \begin{itemize}\itemsep2pt
+    \item \textbf{coalesced} is limited by \emph{bytes}, \textbf{random} by \emph{requests}
+          (one every $\sim$14\,cy per owner, only 4\,B each): $15\times$ apart.
+    \item The owner here is SM\,0, the worst position in the GPC; the best-placed
+          owner reaches $\sim$17\,GB/s ($\sim$7\,B/cy).
+    \item The GPC network saturates with $\sim$6 SMs reading: beyond that, adding SMs
+          only splits the same $\sim$53\,GB/s.
+  \end{itemize}
 \end{frame}
 
 \begin{frame}{What's next?}

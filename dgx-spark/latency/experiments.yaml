@@ -125,6 +125,33 @@ jobs:
           bank_aligned: [0]
         command: "./latency-many-threads --target {target} --requesters {requesters} --chasers {chasers} --bank-aligned {bank_aligned} --reps {reps} --steps {steps}"
 
+  # DSMEM THROUGHPUT under load: every thread of every reader block chases a
+  # peer's shared memory at once. broadcast = all ranks read rank 0; ring =
+  # rank k reads rank k+1. random = each lane at its own random point of the
+  # cycle (~32 requests per warp); coalesced = a warp reads one 128 B line.
+  # Plot with: python plot_throughput.py
+  - config: local
+    variables:
+      reps: [11]
+      pattern: [broadcast, ring]
+      access: [random, coalesced]
+      cluster_size: [2, 4, 6, 12]
+    tag: "tp_{pattern}_{access}_cs{cluster_size}"
+    command: "./dsmem_many_threads --pattern {pattern} --access {access} --cluster-size {cluster_size} --block-size 256 --reps {reps} --steps {steps}"
+
+  # The same, over the WHOLE chip: 48 / cluster_size clusters side by side, one
+  # block per SM, so every configuration keeps all 48 SMs busy and only the
+  # grouping changes (the experiment of Luo et al. on H800).
+  # Plot with: python plot_throughput.py
+  - config: local
+    variables:
+      reps: [11]
+      pattern: [broadcast, ring]
+      access: [random, coalesced]
+      cluster_size: [2, 4, 6, 12]
+    tag: "tp_gpu_{pattern}_{access}_cs{cluster_size}"
+    command: "./dsmem_many_threads_gpu --pattern {pattern} --access {access} --cluster-size {cluster_size} --block-size 256 --reps {reps} --steps {steps}"
+
   # DSMEM BANDWIDTH: does a wider or coalesced access move more bytes than the
   # 4-byte dependent chase above? width x access x pattern at 128 threads/SM,
   # plus the owner sweep (cluster size) that separates the per-owner ceiling

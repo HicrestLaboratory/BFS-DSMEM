@@ -1,4 +1,4 @@
-// dsmem_many_threads_glob.cu — dsmem_many_threads.cu over the WHOLE chip.
+// dsmem_many_threads_gpu.cu — dsmem_many_threads.cu over the WHOLE chip.
 //
 // dsmem_many_threads.cu launches one cluster, so its cluster size is also the
 // number of SMs doing the work: a bigger cluster means more SMs and more total
@@ -30,8 +30,12 @@
 //   --cluster-size N   blocks per cluster, 2..12                  (default 2)
 //   --clusters N       clusters to launch; 0 = fill every SM once (default 0)
 //   --block-size N     threads per block, multiple of 32          (default 128)
-//   --pattern P        hotspot | ring | random, inside each cluster (default ring)
-//   --access A         pchase | coalesced                         (default coalesced)
+//   --pattern P        broadcast | ring | random, inside each cluster (default ring)
+//   --access A         random | coalesced                         (default coalesced)
+//
+// The access is the same dependent chase as dsmem_many_threads.cu: random =
+// each lane at its own point of one random cycle, coalesced = a warp reads one
+// 128 B line per step. The two programs differ only in how many clusters run.
 //
 // A GB10 GPC has 12 SMs and a cluster never spans two GPCs, so only cluster
 // sizes that divide 12 (2, 3, 4, 6, 12) can use all 48 SMs.
@@ -41,8 +45,8 @@
 // from different clusters stay distinct; `distance` is the rank distance
 // inside the cluster.
 //
-// Build: make dsmem_many_threads_glob
-// Run:   ./dsmem_many_threads_glob --cluster-size 2 --pattern ring --access coalesced
+// Build: make dsmem_many_threads_gpu
+// Run:   ./dsmem_many_threads_gpu --cluster-size 2 --pattern ring --access coalesced
 
 #include <cooperative_groups.h>
 
@@ -52,8 +56,8 @@
 
 namespace cg = cooperative_groups;
 
-enum { PAT_HOTSPOT = 0, PAT_RING = 1, PAT_RANDOM = 2 };
-static const char* PATTERN_NAME[] = {"hotspot", "ring", "random"};
+enum { PAT_BROADCAST = 0, PAT_RING = 1, PAT_RANDOM = 2 };
+static const char* PATTERN_NAME[] = {"broadcast", "ring", "random"};
 
 __device__ __forceinline__ unsigned mix(unsigned x) {
     x ^= x >> 16; x *= 0x7feb352du;
@@ -84,7 +88,7 @@ __global__ void loaded_chase(const unsigned* __restrict__ perm, int pattern,
     const int lane = threadIdx.x & 31, warp = (int)threadIdx.x >> 5;
 
     int target = -1;
-    if (pattern == PAT_HOTSPOT) {
+    if (pattern == PAT_BROADCAST) {
         if (rank != 0) target = 0;
     } else if (pattern == PAT_RING) {
         target = (rank + 1) % cs;
@@ -123,36 +127,33 @@ int main(int argc, char** argv) {
     a.clusters = 0;           // 0 = fill the chip
     a.pattern = PAT_RING;
     a.access = 2;             // coalesced
-    parse_args(argc, argv, &a, "dsmem_many_threads_glob",
+    parse_args(argc, argv, &a, "dsmem_many_threads_gpu",
                "  --cluster-size N  blocks per cluster, 2..12              (default 2)\n"
                "  --clusters N      clusters to launch; 0 = fill every SM   (default 0)\n"
                "  --block-size N    threads per block, multiple of 32      (default 128)\n"
-               "  --pattern P       hotspot | ring | random                (default ring)\n"
-               "  --access A        pchase | coalesced                     (default coalesced)\n"
+               "  --pattern P       broadcast | ring | random              (default ring)\n"
+               "  --access A        random | coalesced                     (default coalesced)\n"
                "  --chasers N       chasing threads per block; 0 = all     (default 0)\n");
     const int cs = a.cluster_size;
     if (cs < 2 || cs > 12) {
-        fprintf(stderr, "dsmem_many_threads_glob: --cluster-size must be 2..12 on GB10\n");
+        fprintf(stderr, "dsmem_many_threads_gpu: --cluster-size must be 2..12 on GB10\n");
         return 1;
     }
     if (a.block_size < 32 || a.block_size > 1024 || a.block_size % 32) {
-        fprintf(stderr, "dsmem_many_threads_glob: --block-size must be a multiple of 32, 32..1024\n");
+        fprintf(stderr, "dsmem_many_threads_gpu: --block-size must be a multiple of 32, 32..1024\n");
         return 1;
     }
     if (a.chasers < 0 || a.chasers > a.block_size) {
-        fprintf(stderr, "dsmem_many_threads_glob: --chasers must be 0..--block-size\n");
+        fprintf(stderr, "dsmem_many_threads_gpu: --chasers must be 0..--block-size\n");
         return 1;
     }
-    if (a.access == 1) {
-        fprintf(stderr, "dsmem_many_threads_glob: --access must be pchase or coalesced\n");
-        return 1;
-    }
+    if (a.access == 1) a.access = 0;   // "random" and "pchase" name the same chase here
     const bool coalesced = (a.access == 2);
     if (coalesced && a.stride_bytes) {
-        fprintf(stderr, "dsmem_many_threads_glob: --stride only applies to --access pchase\n");
+        fprintf(stderr, "dsmem_many_threads_gpu: --stride only applies to --access random\n");
         return 1;
     }
-    const char* access_name = coalesced ? "coalesced" : "pchase";
+    const char* access_name = coalesced ? "coalesced" : "random";
     if (a.chasers == 0) a.chasers = a.block_size;
 
     int nsm = 0, smem_per_sm = 0;
@@ -160,12 +161,12 @@ int main(int argc, char** argv) {
     CUDA_CHECK(cudaDeviceGetAttribute(&smem_per_sm, cudaDevAttrMaxSharedMemoryPerMultiprocessor, 0));
     if (a.clusters == 0) a.clusters = nsm / cs;
     if (a.clusters < 1) {
-        fprintf(stderr, "dsmem_many_threads_glob: --clusters must be >= 1\n");
+        fprintf(stderr, "dsmem_many_threads_gpu: --clusters must be >= 1\n");
         return 1;
     }
     const int clusters = a.clusters, blocks = clusters * cs;
     const int warps = a.block_size / 32;
-    const int readers_per_cluster = (a.pattern == PAT_HOTSPOT) ? cs - 1 : cs;
+    const int readers_per_cluster = (a.pattern == PAT_BROADCAST) ? cs - 1 : cs;
     const int readers = clusters * readers_per_cluster;
     const int rows = blocks * warps;
 
@@ -191,7 +192,7 @@ int main(int argc, char** argv) {
     int max_clusters = 0;
     CUDA_CHECK(cudaOccupancyMaxActiveClusters(&max_clusters, (void*)loaded_chase, &cfg));
     if (clusters > max_clusters) {
-        fprintf(stderr, "dsmem_many_threads_glob: %d clusters of %d requested, but only %d fit at "
+        fprintf(stderr, "dsmem_many_threads_gpu: %d clusters of %d requested, but only %d fit at "
                         "once (one block per SM); use --clusters %d or a cluster size that "
                         "divides 12\n", clusters, cs, max_clusters, max_clusters);
         return 1;
@@ -218,7 +219,7 @@ int main(int argc, char** argv) {
     unsigned* smids;         CUDA_CHECK(cudaMallocManaged(&smids, (blocks + rows) * sizeof(unsigned)));
 
     char name[64];
-    snprintf(name, sizeof name, coalesced ? "dsmem_glob_%s_coalesced" : "dsmem_glob_%s",
+    snprintf(name, sizeof name, coalesced ? "dsmem_gpu_%s_coalesced" : "dsmem_gpu_%s_random",
              PATTERN_NAME[a.pattern]);
     const double total_bytes = (double)readers * a.chasers * a.steps * sizeof(unsigned);
 
@@ -234,7 +235,7 @@ int main(int argc, char** argv) {
         std::set<unsigned> sms(smids, smids + blocks);
         distinct_sms = (int)sms.size();
         if (distinct_sms != blocks) {
-            fprintf(stderr, "dsmem_many_threads_glob: %d blocks landed on only %d SMs; "
+            fprintf(stderr, "dsmem_many_threads_gpu: %d blocks landed on only %d SMs; "
                             "the one-block-per-SM padding did not hold\n", blocks, distinct_sms);
             return 1;
         }
@@ -243,7 +244,7 @@ int main(int argc, char** argv) {
         double sum_cpl = 0;
         int n = 0;
         for (int i = 0; i < rows; i++) {
-            if (out[i].cycles == 0) continue;           // hotspot owners: no data
+            if (out[i].cycles == 0) continue;           // broadcast owners: no data
             const int gb = i / warps, warp = i % warps;
             const int rank = gb % cs, cl = gb / cs;
             const int target = (int)smids[blocks + i];  // rank inside the cluster
