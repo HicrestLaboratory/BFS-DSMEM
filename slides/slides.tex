@@ -652,7 +652,7 @@
   \raggedright
   \begin{itemize}\itemsep1pt
     \item One cluster, one block per SM, 256 threads per block.
-    \item Two access patterns, both dependent chases (one load in flight per thread):
+    \item Two access patterns:
       \begin{itemize}\footnotesize\itemsep0pt
         \item \texttt{pchase}: each lane starts from a different random position in the same cycle, resulting in approximately 32 independent dependent-load chains per warp.
         \item \texttt{coalesced}: lane $l$ starts at $\mathit{base}+l$ $\Rightarrow$ a warp reads

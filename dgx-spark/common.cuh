@@ -154,10 +154,8 @@ struct Args {
     // dsmem_matrix.cu only:
     int clusters = 1;       // clusters to launch; 4 covers every GPC at once
     int active = 0;         // which cluster's reader actually chases
-    // dsmem_bandwidth.cu only:
-    int width = 4;          // bytes per lane per load: 4, 8 or 16
+    // dsmem_many_threads*.cu only:
     int access = 0;         // 0 = chase (dependent), 1 = random, 2 = coalesced
-    int ilp = 1;            // independent loads in flight per thread
     // transfer.cu / kernel_boundary.cu only:
     int method = 0;         // index into TRANSFER_METHOD[]
     int mode = 0;           // 0 = pingpong (latency), 1 = stream (bandwidth)
@@ -210,8 +208,6 @@ void parse_args(int argc, char** argv, Args* a, const char* prog,
         else if (strcmp(f, "--chasers") == 0)       a->chasers = atoi(v);
         else if (strcmp(f, "--clusters") == 0)      a->clusters = atoi(v);
         else if (strcmp(f, "--active") == 0)        a->active = atoi(v);
-        else if (strcmp(f, "--width") == 0)         a->width = atoi(v);
-        else if (strcmp(f, "--ilp") == 0)           a->ilp = atoi(v);
         else if (strcmp(f, "--bytes") == 0)         a->bytes = atoi(v);
         else if (strcmp(f, "--rounds") == 0)        a->rounds = atoi(v);
         else if (strcmp(f, "--src") == 0)           a->src = atoi(v);
