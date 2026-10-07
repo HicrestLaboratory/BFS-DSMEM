@@ -1,283 +1,213 @@
-// histogram-proof.cu — does the 96-block cluster residency cap show up in a
-// REAL workload, and what does it cost?
+// histogram-dsmem.cu — is a DSMEM histogram faster than the alternatives?
 //
-// Companion to histogram.cu. Three things are demonstrated here:
+// NVIDIA's motivating example for distributed shared memory is a histogram
+// with more bins than one block's shared memory can hold: a cluster keeps the
+// histogram in shared memory, split across its blocks, instead of falling
+// back to atomics on global memory. Three ways to build the same histogram:
 //
-//  1. THE CAP IS NOT A LAUNCH LIMIT. A clustered histogram over a grid of
-//     3072 blocks launches and completes perfectly well. The cap governs how
-//     many blocks are resident *at one instant*; the rest run in later waves.
-//     Any attempt to "prove" the limit by watching a big launch fail will
-//     find nothing.
+//   global   every element is an atomicAdd on the histogram in global memory
+//            (served by L2). Works for any number of bins.
+//   private  every block keeps a full copy of the histogram in its own shared
+//            memory (fast local atomics), then adds it to global memory.
+//            Only possible while all the bins fit in one block.
+//   DSMEM    the bins are split across the blocks of a cluster; an element
+//            whose bin lives on another block is counted with an atomicAdd on
+//            that block's shared memory (map_shared_rank).
 //
-//  2. THE CAP IS DIRECTLY OBSERVABLE FROM INSIDE THE KERNEL. Each block
-//     increments a live counter on entry and decrements it on exit, tracking
-//     the running maximum with atomicMax. That peak is the number of blocks
-//     the hardware actually had resident simultaneously. Run the same
-//     histogram clustered and unclustered and compare. Note this measures an
-//     observed peak, so it is a LOWER bound on the true residency: blocks
-//     must overlap in time for the counter to see them, which is why each
-//     block is given a substantial amount of work.
+// Result on GB10: when the bins fit, the private copy is fastest; when they
+// do not, global atomics beat DSMEM by 4-7x. Every DSMEM atomic is a separate
+// 4-byte request through the SM-to-SM network, which handles only a few
+// billion such requests per second for the whole chip, while L2 atomics run
+// at ~27 billion per second.
 //
-//  3. THE CAP HAS A PRICE, AND BLOCK SIZE IS THE LEVER. Fewer resident blocks
-//     means fewer resident warps to hide memory latency. The block-size sweep
-//     shows the clustered configuration recovering as blocks grow, exactly as
-//     the microbenchmarks predict.
-//
-// The two kernels do the same total work. The unclustered one keeps a private
-// full histogram in its own shared memory; the clustered one splits the bins
-// across the ranks of its cluster and uses map_shared_rank + remote atomicAdd
-// (the DSMEM pattern of histogram.cu). Both then merge into global memory.
-// Timing runs are uninstrumented (the counters are a compile-time template
-// parameter) so the residency probe cannot perturb the measured times.
-//
-// Build: nvcc -O3 -arch=sm_121 histogram-proof.cu -o histogram-proof
-// Run:   ./histogram-proof
+// Build: make histogram-dsmem   (or: nvcc -O3 -arch=sm_121 histogram-dsmem.cu -o histogram-dsmem)
+// Run:   ./histogram-dsmem
 
-#include <cuda_runtime.h>
-#include <cooperative_groups.h>
-#include <algorithm>
 #include <cstdio>
-#include <cstdlib>
 #include <vector>
-
-#include "../common.cuh"  // CUDA_CHECK
+#include <algorithm>
+#include <cooperative_groups.h>
+#include "../common.cuh"   // CUDA_CHECK
 
 namespace cg = cooperative_groups;
 
-// nbins is divisible by every cluster size tested (2,4,6,8,12) so the bins
-// split evenly across ranks.
-static const int NBINS      = 1536;
-static const int ARRAY_SIZE = 32 * 1024 * 1024;
-static const int GRID       = 3072;    // divisible by 2,4,6,8,12
+constexpr int ARRAY_SIZE = 32 * 1024 * 1024;   // elements to count
+constexpr int GRID = 3072;                     // blocks: divisible by every cluster size used
+constexpr int BLOCK = 512;                     // threads per block
+constexpr int REPS = 11;                       // timed runs; the median is reported
 
-// ---------------------------------------------------------------- residency probe
-struct Probe { int live; int peak; };
+// Special "times" for a table cell that holds no measurement.
+constexpr double WRONG = -1;          // the histogram came out incorrect
+constexpr double DOES_NOT_FIT = -2;   // the version cannot run with this many bins
 
-template <bool INSTRUMENT>
-__device__ __forceinline__ void probe_enter(Probe* p) {
-    if (INSTRUMENT && threadIdx.x == 0) {
-        int live = atomicAdd(&p->live, 1) + 1;
-        atomicMax(&p->peak, live);
-    }
-}
-template <bool INSTRUMENT>
-__device__ __forceinline__ void probe_exit(Probe* p) {
-    if (INSTRUMENT && threadIdx.x == 0) atomicSub(&p->live, 1);
-}
+// ---------------------------------------------------------------- kernels
+// All three use a grid-stride loop: thread t handles elements t, t + stride,
+// t + 2*stride, ... so any grid size covers the whole input.
 
-// ---------------------------------------------------------------- unclustered
-// Private full histogram in this block's own shared memory, then global merge.
-template <bool INSTRUMENT>
-__global__ void hist_plain(int* __restrict__ bins, const int* __restrict__ input,
-                           int arraySize, Probe* probe) {
-    extern __shared__ int smem[];
-    probe_enter<INSTRUMENT>(probe);
-
-    for (int i = threadIdx.x; i < NBINS; i += blockDim.x) smem[i] = 0;
-    __syncthreads();
-
-    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+__global__ void hist_global(int* bins, const int* input, int n) {
     int stride = blockDim.x * gridDim.x;
-    for (int i = tid; i < arraySize; i += stride)
-        atomicAdd(&smem[input[i]], 1);          // local shared-memory atomic
-
-    __syncthreads();
-    for (int i = threadIdx.x; i < NBINS; i += blockDim.x)
-        if (smem[i]) atomicAdd(&bins[i], smem[i]);
-
-    probe_exit<INSTRUMENT>(probe);
+    for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < n; i += stride)
+        atomicAdd(&bins[input[i]], 1);
 }
 
-// ---------------------------------------------------------------- clustered
-// Bins are split across the cluster's ranks; a value whose bin lives on
-// another rank is accumulated with a REMOTE shared-memory atomic through
-// map_shared_rank — the DSMEM pattern from histogram.cu.
-template <bool INSTRUMENT>
-__global__ void hist_cluster(int* __restrict__ bins, const int* __restrict__ input,
-                             int arraySize, int binsPerBlock, Probe* probe) {
-    extern __shared__ int smem[];
+__global__ void hist_private(int* bins, const int* input, int n, int nbins) {
+    extern __shared__ int local[];             // this block's copy of all the bins
+    for (int b = threadIdx.x; b < nbins; b += blockDim.x) local[b] = 0;
+    __syncthreads();
+
+    int stride = blockDim.x * gridDim.x;
+    for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < n; i += stride)
+        atomicAdd(&local[input[i]], 1);        // shared-memory atomic, on this SM
+    __syncthreads();
+
+    for (int b = threadIdx.x; b < nbins; b += blockDim.x)
+        if (local[b]) atomicAdd(&bins[b], local[b]);
+}
+
+__global__ void hist_dsmem(int* bins, const int* input, int n, int bins_per_block) {
+    extern __shared__ int local[];             // this block's share of the bins
     cg::cluster_group cluster = cg::this_cluster();
-    probe_enter<INSTRUMENT>(probe);
+    for (int b = threadIdx.x; b < bins_per_block; b += blockDim.x) local[b] = 0;
+    cluster.sync();                            // every block's share is zeroed
 
-    for (int i = threadIdx.x; i < binsPerBlock; i += blockDim.x) smem[i] = 0;
-    cluster.sync();                              // every rank's bins are zeroed
-
-    int tid = blockIdx.x * blockDim.x + threadIdx.x;
     int stride = blockDim.x * gridDim.x;
-    for (int i = tid; i < arraySize; i += stride) {
-        int binid = input[i];
-        int dstBlock  = binid / binsPerBlock;    // which rank owns this bin
-        int dstOffset = binid % binsPerBlock;
-        int* dst = cluster.map_shared_rank(smem, dstBlock);
-        atomicAdd(dst + dstOffset, 1);           // remote (or local) SMEM atomic
+    for (int i = blockIdx.x * blockDim.x + threadIdx.x; i < n; i += stride) {
+        int bin = input[i];
+        int owner = bin / bins_per_block;      // which block of the cluster holds this bin
+        int* owner_bins = cluster.map_shared_rank(local, owner);
+        atomicAdd(&owner_bins[bin % bins_per_block], 1);   // usually on ANOTHER SM
     }
+    cluster.sync();                            // all remote atomics have landed
 
-    cluster.sync();                              // all remote writes landed
-    int* out = bins + cluster.block_rank() * binsPerBlock;
-    for (int i = threadIdx.x; i < binsPerBlock; i += blockDim.x)
-        if (smem[i]) atomicAdd(&out[i], smem[i]);
-
-    probe_exit<INSTRUMENT>(probe);
+    // Bins of rank r are bins r*bins_per_block ... (r+1)*bins_per_block - 1.
+    int* my_bins = bins + cluster.block_rank() * bins_per_block;
+    for (int b = threadIdx.x; b < bins_per_block; b += blockDim.x)
+        if (local[b]) atomicAdd(&my_bins[b], local[b]);
 }
 
-// ---------------------------------------------------------------- host helpers
-struct HistResult { int peak; double ms; bool correct; };
+// ---------------------------------------------------------------- host
 
-// mode 0 = plain algorithm, plain launch
-// mode 1 = plain algorithm, CLUSTERED launch (same work, same memory pattern;
-//          the only difference is the residency cap -> isolates its cost)
-// mode 2 = DSMEM algorithm (bins split across ranks, remote atomics)
-static HistResult run(int mode, int clusterSize, int blockDim_,
-                  int* d_bins, const int* d_input, Probe* d_probe, int reps) {
-    const bool clustered = (mode == 2);
-    const int binsPerBlock = clustered ? NBINS / clusterSize : NBINS;
-    const size_t smemBytes = binsPerBlock * sizeof(int);
-    HistResult r{};
-
-    auto launch = [&](bool instrument) {
-        CUDA_CHECK(cudaMemset(d_bins, 0, NBINS * sizeof(int)));
-        CUDA_CHECK(cudaMemset(d_probe, 0, sizeof(Probe)));
-        if (mode == 0) {
-            void* k = instrument ? (void*)hist_plain<true> : (void*)hist_plain<false>;
-            CUDA_CHECK(cudaFuncSetAttribute(k, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smemBytes));
-            if (instrument) hist_plain<true><<<GRID, blockDim_, smemBytes>>>(d_bins, d_input, ARRAY_SIZE, d_probe);
-            else            hist_plain<false><<<GRID, blockDim_, smemBytes>>>(d_bins, d_input, ARRAY_SIZE, d_probe);
-        } else if (mode == 1) {
-            // identical kernel to mode 0, but launched with a cluster dimension
-            void* k = instrument ? (void*)hist_plain<true> : (void*)hist_plain<false>;
-            CUDA_CHECK(cudaFuncSetAttribute(k, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smemBytes));
-            CUDA_CHECK(cudaFuncSetAttribute(k, cudaFuncAttributeNonPortableClusterSizeAllowed, 1));
-            cudaLaunchConfig_t cfg = {};
-            cfg.gridDim = dim3(GRID, 1, 1);
-            cfg.blockDim = dim3(blockDim_, 1, 1);
-            cfg.dynamicSmemBytes = smemBytes;
-            cudaLaunchAttribute attr;
-            attr.id = cudaLaunchAttributeClusterDimension;
-            attr.val.clusterDim.x = clusterSize;
-            attr.val.clusterDim.y = 1; attr.val.clusterDim.z = 1;
-            cfg.attrs = &attr; cfg.numAttrs = 1;
-            if (instrument) CUDA_CHECK(cudaLaunchKernelEx(&cfg, hist_plain<true>,  d_bins, d_input, ARRAY_SIZE, d_probe));
-            else            CUDA_CHECK(cudaLaunchKernelEx(&cfg, hist_plain<false>, d_bins, d_input, ARRAY_SIZE, d_probe));
-        } else {
-            void* k = instrument ? (void*)hist_cluster<true> : (void*)hist_cluster<false>;
-            CUDA_CHECK(cudaFuncSetAttribute(k, cudaFuncAttributeMaxDynamicSharedMemorySize, (int)smemBytes));
-            // cluster sizes above the portable maximum of 8 need this opt-in
-            CUDA_CHECK(cudaFuncSetAttribute(k, cudaFuncAttributeNonPortableClusterSizeAllowed, 1));
-            cudaLaunchConfig_t cfg = {};
-            cfg.gridDim = dim3(GRID, 1, 1);
-            cfg.blockDim = dim3(blockDim_, 1, 1);
-            cfg.dynamicSmemBytes = smemBytes;
-            cudaLaunchAttribute attr;
-            attr.id = cudaLaunchAttributeClusterDimension;
-            attr.val.clusterDim.x = clusterSize;
-            attr.val.clusterDim.y = 1;
-            attr.val.clusterDim.z = 1;
-            cfg.attrs = &attr; cfg.numAttrs = 1;
-            if (instrument) CUDA_CHECK(cudaLaunchKernelEx(&cfg, hist_cluster<true>,  d_bins, d_input, ARRAY_SIZE, binsPerBlock, d_probe));
-            else            CUDA_CHECK(cudaLaunchKernelEx(&cfg, hist_cluster<false>, d_bins, d_input, ARRAY_SIZE, binsPerBlock, d_probe));
-        }
-    };
-
-    // (a) instrumented run -> peak resident blocks
-    launch(true);
-    CUDA_CHECK(cudaDeviceSynchronize());
-    Probe hp; CUDA_CHECK(cudaMemcpy(&hp, d_probe, sizeof(Probe), cudaMemcpyDeviceToHost));
-    r.peak = hp.peak;
-
-    // correctness: every input element must land in exactly one bin
-    std::vector<int> hb(NBINS);
-    CUDA_CHECK(cudaMemcpy(hb.data(), d_bins, NBINS * sizeof(int), cudaMemcpyDeviceToHost));
-    long long total = 0; for (int v : hb) total += v;
-    r.correct = (total == ARRAY_SIZE);
-
-    // (b) uninstrumented timing runs
-    cudaEvent_t e0, e1; CUDA_CHECK(cudaEventCreate(&e0)); CUDA_CHECK(cudaEventCreate(&e1));
-    std::vector<double> t;
-    launch(false); CUDA_CHECK(cudaDeviceSynchronize());               // warm-up
-    for (int i = 0; i < reps; i++) {
-        CUDA_CHECK(cudaEventRecord(e0));
-        launch(false);
-        CUDA_CHECK(cudaEventRecord(e1));
-        CUDA_CHECK(cudaEventSynchronize(e1));
-        float ms; CUDA_CHECK(cudaEventElapsedTime(&ms, e0, e1));
-        t.push_back(ms);
+// Random input spread uniformly over `nbins` bins, copied to the GPU.
+void fill_input(int* d_input, int nbins) {
+    std::vector<int> h(ARRAY_SIZE);
+    unsigned seed = 12345;
+    for (int i = 0; i < ARRAY_SIZE; i++) {
+        seed = seed * 1664525u + 1013904223u;  // simple random generator
+        h[i] = (int)((seed >> 8) % nbins);
     }
-    CUDA_CHECK(cudaEventDestroy(e0)); CUDA_CHECK(cudaEventDestroy(e1));
-    std::sort(t.begin(), t.end());
-    r.ms = t[t.size() / 2];
-    return r;
+    CUDA_CHECK(cudaMemcpy(d_input, h.data(), ARRAY_SIZE * sizeof(int), cudaMemcpyHostToDevice));
+}
+
+// Runs `launch` (which must clear and fill d_bins) REPS times and returns the
+// median time in ms, or WRONG if the histogram is wrong: every element must be
+// counted exactly once, so the bins must add up to ARRAY_SIZE.
+template <class Launch>
+double time_ms(Launch launch, int* d_bins, int nbins) {
+    launch();                                  // warm-up, and the correctness check
+    CUDA_CHECK(cudaDeviceSynchronize());
+    std::vector<int> h(nbins);
+    CUDA_CHECK(cudaMemcpy(h.data(), d_bins, nbins * sizeof(int), cudaMemcpyDeviceToHost));
+    long long total = 0;
+    for (int v : h) total += v;
+    if (total != ARRAY_SIZE) return WRONG;
+
+    cudaEvent_t start, stop;
+    CUDA_CHECK(cudaEventCreate(&start));
+    CUDA_CHECK(cudaEventCreate(&stop));
+    std::vector<double> times;
+    for (int r = 0; r < REPS; r++) {
+        CUDA_CHECK(cudaEventRecord(start));
+        launch();
+        CUDA_CHECK(cudaEventRecord(stop));
+        CUDA_CHECK(cudaEventSynchronize(stop));
+        float ms;
+        CUDA_CHECK(cudaEventElapsedTime(&ms, start, stop));
+        times.push_back(ms);
+    }
+    CUDA_CHECK(cudaEventDestroy(start));
+    CUDA_CHECK(cudaEventDestroy(stop));
+    std::sort(times.begin(), times.end());
+    return times[REPS / 2];
+}
+
+// One table cell: the time, '-' if the version cannot run, 'WRONG' if the
+// histogram was incorrect.
+void cell(double ms) {
+    if (ms == DOES_NOT_FIT) printf(" %8s", "-");
+    else if (ms == WRONG)   printf(" %8s", "WRONG");
+    else                    printf(" %8.3f", ms);
 }
 
 int main() {
-    cudaDeviceProp prop; CUDA_CHECK(cudaGetDeviceProperties(&prop, 0));
-    printf("# %s, %d SMs | %d elements, %d bins, grid %d blocks\n\n",
-           prop.name, prop.multiProcessorCount, ARRAY_SIZE, NBINS, GRID);
+    cudaDeviceProp prop;
+    CUDA_CHECK(cudaGetDeviceProperties(&prop, 0));
+    const int max_smem = (int)prop.sharedMemPerBlockOptin;   // most shared memory per block
 
-    // random input spread over all bins
-    std::vector<int> h_input(ARRAY_SIZE);
-    unsigned seed = 12345;
-    for (int i = 0; i < ARRAY_SIZE; i++) {
-        seed = seed * 1664525u + 1013904223u;
-        h_input[i] = (int)((seed >> 8) % NBINS);
-    }
-    int *d_input, *d_bins; Probe* d_probe;
+    // Every bin count is divisible by 2, 4, 8 and 12, so the bins split
+    // evenly across the blocks of any cluster tested.
+    const std::vector<int> bin_counts = {1536, 6144, 24576, 49152, 98304, 196608, 393216};
+    const int max_bins = bin_counts.back();
+
+    int *d_input, *d_bins;
     CUDA_CHECK(cudaMalloc(&d_input, ARRAY_SIZE * sizeof(int)));
-    CUDA_CHECK(cudaMalloc(&d_bins,  NBINS * sizeof(int)));
-    CUDA_CHECK(cudaMalloc(&d_probe, sizeof(Probe)));
-    CUDA_CHECK(cudaMemcpy(d_input, h_input.data(), ARRAY_SIZE * sizeof(int), cudaMemcpyHostToDevice));
+    CUDA_CHECK(cudaMalloc(&d_bins, max_bins * sizeof(int)));
 
-    const int reps = 11;
+    // Opt-ins: clusters bigger than 8, and shared memory above 48 KiB.
+    CUDA_CHECK(cudaFuncSetAttribute(hist_dsmem, cudaFuncAttributeNonPortableClusterSizeAllowed, 1));
+    CUDA_CHECK(cudaFuncSetAttribute(hist_dsmem, cudaFuncAttributeMaxDynamicSharedMemorySize, max_smem));
+    CUDA_CHECK(cudaFuncSetAttribute(hist_private, cudaFuncAttributeMaxDynamicSharedMemorySize, max_smem));
 
-    printf("=== 1. Peak SIMULTANEOUSLY RESIDENT blocks, measured inside the kernel ===\n");
-    printf("(grid is %d blocks in every case; all of them run, in waves)\n\n", GRID);
-    printf("%-34s %9s %14s %8s %10s %8s\n",
-           "configuration", "blockDim", "peak resident", "waves", "time ms", "correct");
-    for (int bd : {128, 256}) {
-        HistResult p = run(0, 1, bd, d_bins, d_input, d_probe, reps);
-        printf("%-34s %9d %14d %8.1f %10.3f %8s\n", "plain algo, plain launch", bd,
-               p.peak, (double)GRID / p.peak, p.ms, p.correct ? "yes" : "NO");
-        for (int cs : {2, 4, 8, 12}) {
-            HistResult q = run(1, cs, bd, d_bins, d_input, d_probe, reps);
-            char nm[80]; snprintf(nm, sizeof nm, "plain algo, CLUSTERED launch cs=%d", cs);
-            printf("%-34s %9d %14d %8.1f %10.3f %8s\n", nm, bd, q.peak,
-                   (double)GRID / q.peak, q.ms, q.correct ? "yes" : "NO");
-        }
-        for (int cs : {2, 4, 6, 8, 12}) {
-            HistResult c = run(2, cs, bd, d_bins, d_input, d_probe, reps);
-            char nm[80]; snprintf(nm, sizeof nm, "DSMEM algo, cluster size %d", cs);
-            printf("%-34s %9d %14d %8.1f %10.3f %8s\n", nm, bd, c.peak,
-                   (double)GRID / c.peak, c.ms, c.correct ? "yes" : "NO");
+    printf("%s: %d elements, %d blocks of %d threads. Time in ms, '-' = does not fit.\n\n",
+           prop.name, ARRAY_SIZE, GRID, BLOCK);
+    printf("%8s %6s | %8s %8s | %8s %8s %8s %8s\n", "bins", "KiB", "global", "private",
+           "DSMEM 2", "DSMEM 4", "DSMEM 8", "DSMEM 12");
+
+    for (int nbins : bin_counts) {
+        fill_input(d_input, nbins);
+        const size_t hist_bytes = nbins * sizeof(int);
+        printf("%8d %6d |", nbins, (int)(hist_bytes / 1024));
+
+        // global atomics: no shared memory, always possible
+        cell(time_ms([&] {
+            CUDA_CHECK(cudaMemset(d_bins, 0, hist_bytes));
+            hist_global<<<GRID, BLOCK>>>(d_bins, d_input, ARRAY_SIZE);
+        }, d_bins, nbins));
+
+        // private copy: only if the whole histogram fits in one block
+        if ((int)hist_bytes > max_smem) cell(DOES_NOT_FIT);
+        else cell(time_ms([&] {
+            CUDA_CHECK(cudaMemset(d_bins, 0, hist_bytes));
+            hist_private<<<GRID, BLOCK, hist_bytes>>>(d_bins, d_input, ARRAY_SIZE, nbins);
+        }, d_bins, nbins));
+        printf(" |");
+
+        // DSMEM: only if one block's share of the bins fits in its shared memory
+        for (int cluster_size : {2, 4, 8, 12}) {
+            const int bins_per_block = nbins / cluster_size;
+            const size_t share_bytes = bins_per_block * sizeof(int);
+            if ((int)share_bytes > max_smem) { cell(DOES_NOT_FIT); continue; }
+
+            cudaLaunchConfig_t cfg = {};
+            cfg.gridDim = dim3(GRID);
+            cfg.blockDim = dim3(BLOCK);
+            cfg.dynamicSmemBytes = share_bytes;
+            cudaLaunchAttribute attr;
+            attr.id = cudaLaunchAttributeClusterDimension;
+            attr.val.clusterDim.x = cluster_size;
+            attr.val.clusterDim.y = 1;
+            attr.val.clusterDim.z = 1;
+            cfg.attrs = &attr;
+            cfg.numAttrs = 1;
+            cell(time_ms([&] {
+                CUDA_CHECK(cudaMemset(d_bins, 0, hist_bytes));
+                CUDA_CHECK(cudaLaunchKernelEx(&cfg, hist_dsmem, d_bins, (const int*)d_input,
+                                              ARRAY_SIZE, bins_per_block));
+            }, d_bins, nbins));
         }
         printf("\n");
     }
 
-    printf("=== 2. Isolating the two costs (blockDim 256) ===\n");
-    printf("Same algorithm under plain vs clustered launch isolates the residency\n");
-    printf("cap; the DSMEM row adds remote atomics on top of it.\n\n");
-    {
-        HistResult a = run(0, 1, 256, d_bins, d_input, d_probe, reps);
-        HistResult b = run(1, 4, 256, d_bins, d_input, d_probe, reps);
-        HistResult c = run(2, 4, 256, d_bins, d_input, d_probe, reps);
-        printf("  plain algo, plain launch      : %7.3f ms  (%d resident)\n", a.ms, a.peak);
-        printf("  plain algo, clustered launch  : %7.3f ms  (%d resident)  -> residency cap costs %.2fx\n",
-               b.ms, b.peak, b.ms / a.ms);
-        printf("  DSMEM algo, cluster size 4    : %7.3f ms  (%d resident)  -> remote atomics add %.2fx more\n",
-               c.ms, c.peak, c.ms / b.ms);
-        printf("  total clustered-DSMEM penalty : %.2fx\n", c.ms / a.ms);
-    }
-
-    printf("\n=== 3. Block size as a lever (DSMEM algo, cluster size 4) ===\n\n");
-    printf("%-34s %9s %14s %12s %10s\n",
-           "configuration", "blockDim", "peak resident", "warps/SM", "time ms");
-    for (int bd : {64, 128, 256, 512}) {
-        HistResult c = run(2, 4, bd, d_bins, d_input, d_probe, reps);
-        HistResult p = run(0, 1, bd, d_bins, d_input, d_probe, reps);
-        printf("%-34s %9d %14d %12.1f %10.3f\n", "DSMEM algo, cluster size 4", bd, c.peak,
-               (double)c.peak / prop.multiProcessorCount * (bd / 32.0), c.ms);
-        printf("%-34s %9d %14d %12.1f %10.3f\n", "  plain launch (reference)", bd, p.peak,
-               (double)p.peak / prop.multiProcessorCount * (bd / 32.0), p.ms);
-    }
-
-    CUDA_CHECK(cudaFree(d_input)); CUDA_CHECK(cudaFree(d_bins)); CUDA_CHECK(cudaFree(d_probe));
+    CUDA_CHECK(cudaFree(d_input));
+    CUDA_CHECK(cudaFree(d_bins));
     return 0;
 }
