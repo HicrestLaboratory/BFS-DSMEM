@@ -7,6 +7,12 @@ __pycache__/
 dgx-spark/latency/SbatchMan
 book.md
 TODO.md
+dgx-spark/extra/histogram.cu
+dgx-spark/extra/occupancy.cu
+dgx-spark/extra/dsmem_capacity.cu
+dgx-spark/extra/cluster_cap_cause.cu
+dgx-spark/extra/carveout_occupancy.cu
+dgx-spark/extra/cluster_cap_cause.cu
 resources/
 slides/b1.log
 slides/build.log
