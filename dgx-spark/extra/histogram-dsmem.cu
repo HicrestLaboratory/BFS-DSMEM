@@ -32,8 +32,8 @@
 namespace cg = cooperative_groups;
 
 constexpr int ARRAY_SIZE = 32 * 1024 * 1024;   // elements to count
-constexpr int GRID = 3072;                     // blocks: divisible by every cluster size used
-constexpr int BLOCK = 512;                     // threads per block
+constexpr int GRID = 1152;                     // blocks: divisible by every cluster size used
+constexpr int BLOCK = 256;                     // threads per block
 constexpr int REPS = 11;                       // timed runs; the median is reported
 
 // Special "times" for a table cell that holds no measurement.

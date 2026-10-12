@@ -24,3 +24,5 @@ slides/slides.out
 slides/slides.run.xml
 slides/slides.snm
 slides/slides.toc
+cuda_micro_bench/
+build/

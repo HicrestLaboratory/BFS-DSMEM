@@ -54,13 +54,13 @@ int main(int argc, char** argv) {
     Args a;
     a.reps = 21;   // 144 cells, so a smaller default than the other programs
     parse_args(argc, argv, &a, "dsmem_matrix",
-               "  --cluster-size N  blocks per cluster, 2..12            (default 12)\n"
+               "  --cluster-size N  blocks per cluster, >= 2               (default 12)\n"
                "  --clusters N      clusters to launch; 4 covers all GPCs  (default 1)\n"
                "  --active N        which cluster is measured, 0..N-1      (default 0)\n");
     if (a.cluster_size == 2) a.cluster_size = 12;   // Args' default means "unset" here
     int cs = a.cluster_size;
-    if (cs < 2 || cs > 12) {
-        fprintf(stderr, "dsmem_matrix: --cluster-size must be 2..12 on GB10\n");
+    if (cs < 2) {
+        fprintf(stderr, "dsmem_matrix: --cluster-size must be >= 2\n");
         return 1;
     }
     print_header(argc, argv, a, SBUF);

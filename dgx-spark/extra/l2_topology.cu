@@ -1,6 +1,6 @@
 // l2_topology.cu — how far is each SM, physically, from the L2?
 //
-// L2 latency is not uniform: it varies by 19% across the 48 SMs, in a fixed,
+// L2 latency is not uniform: on GB10 it varies by 19% across the 48 SMs, in a fixed,
 // reproducible pattern that depends only on which TPC the SM belongs to.
 // Subtracting each GPC's minimum cancels the constant leg from the GPC
 // outward and leaves each TPC's own distance to its GPC's interconnect point.
@@ -21,11 +21,17 @@
 //
 // You cannot ask CUDA to place a block on a chosen SM, but you can force the
 // placement: each block requests more than half an SM's shared memory, so only
-// one block fits per SM, and a grid of exactly 48 blocks therefore covers all
-// 48 SMs one apiece. The block that finds itself on the target SM chases; the
-// other 47 return immediately. The target is swept over all 48 SMs, every run
+// one block fits per SM, and a grid of exactly one block per SM therefore
+// covers every SM once. The block that finds itself on the target SM chases;
+// the others return immediately. The target is swept over all SMs, every run
 // walking the identical address sequence through the same warmed, L2-resident
 // buffer.
+//
+// OTHER GPUS. The chip layout is in NUM_GPC, NUM_TPC and SMS_PER_TPC below
+// (GB10: 4 x 6 x 2 = 48 SMs). Set them for your GPU, and check that its SMs
+// are numbered the same way (TPC = smid / SMS_PER_TPC, GPC = TPC % NUM_GPC, as
+// measured for GB10 by ../gpc.cu); the program refuses to run if the SM count
+// does not match the layout. Compile for your GPU's architecture (-arch=sm_XX).
 //
 // Build: make l2_topology      (or: nvcc -O3 -arch=sm_121 l2_topology.cu -o l2_topology)
 // Run:   ./l2_topology [--buffer-bytes N (default 6 MiB)] [--steps N] [--seed N]
@@ -37,13 +43,27 @@
 
 #include "../common.cuh"  // CUDA_CHECK, smid()
 
+// Chip layout. These are GB10's values: change them for another GPU.
+constexpr int NUM_GPC = 4;       // GPCs on the chip
+constexpr int NUM_TPC = 6;       // TPCs in each GPC
+constexpr int SMS_PER_TPC = 2;   // SMs in each TPC
+constexpr int NUM_SM = NUM_GPC * NUM_TPC * SMS_PER_TPC;
+
+// How SM ids map onto the layout (measured for GB10 by ../gpc.cu): the SMs of
+// a TPC are consecutive, and consecutive TPCs go round-robin over the GPCs.
+// So the TPC at position `pos` of GPC `gpc` is TPC pos * NUM_GPC + gpc.
+__host__ __device__ inline int tpc_of(int sm)       { return sm / SMS_PER_TPC; }
+__host__ __device__ inline int gpc_of_tpc(int tpc)  { return tpc % NUM_GPC; }
+__host__ __device__ inline int pos_of_tpc(int tpc)  { return tpc / NUM_GPC; }
+__host__ __device__ inline int tpc_at(int gpc, int pos) { return pos * NUM_GPC + gpc; }
+
 // One block per SM (the host requests >50% of an SM's shared memory), so
 // exactly one block sees smid() == target_sm. Times every load individually.
 __global__ void fine_chase(const unsigned* buf, unsigned start, int steps,
                            unsigned* lat, unsigned target_sm, unsigned* ran_on) {
     extern __shared__ char scratch[];
     if (threadIdx.x != 0) return;
-    if (smid() != target_sm) return;              // not my SM
+    if (smid() != target_sm) return; // not my SM
     *ran_on = smid();
 
     unsigned idx = start;
@@ -80,6 +100,12 @@ int main(int argc, char** argv) {
     CUDA_CHECK(cudaGetDeviceProperties(&prop, 0));
     size_t n = a.buffer_bytes / sizeof(unsigned);
     int nsm = prop.multiProcessorCount;
+    if (nsm != NUM_SM) {
+        fprintf(stderr, "l2_topology: this GPU has %d SMs, but the layout NUM_GPC x NUM_TPC x "
+                        "SMS_PER_TPC = %d x %d x %d = %d. Set the layout for this GPU.\n",
+                nsm, NUM_GPC, NUM_TPC, SMS_PER_TPC, NUM_SM);
+        return 1;
+    }
 
     std::mt19937 rng(a.seed);
     std::vector<unsigned> h(n);
@@ -103,7 +129,7 @@ int main(int argc, char** argv) {
     unsigned* lat;          CUDA_CHECK(cudaMallocManaged(&lat, steps * sizeof(unsigned)));
 
     // ONE starting point, drawn once from the seeded RNG and reused by every SM.
-    // All 48 therefore walk the identical address sequence through the identical
+    // All SMs therefore walk the identical address sequence through the identical
     // warmed buffer, so any difference between them is the SM's position and
     // nothing else. Drawn rather than hardcoded so --seed still varies it, and
     // so no particular offset is baked into the result.
@@ -114,7 +140,7 @@ int main(int argc, char** argv) {
     // chase kernel BEFORE warming (same trap as ../latency/l2.cu).
     fine_chase<<<nsm, 32, smemPerBlock>>>(d, 1, steps, lat, 0, ran_on);
     CUDA_CHECK(cudaDeviceSynchronize());
-    warm_l2<<<48, 256>>>(d, n, s);
+    warm_l2<<<nsm, 256>>>(d, n, s);
     CUDA_CHECK(cudaDeviceSynchronize());
 
     auto run = [&](unsigned sm, unsigned start, std::vector<unsigned>& outv) {
@@ -140,20 +166,29 @@ int main(int argc, char** argv) {
         if (!run((unsigned)sm, shared_start, v)) continue;
         std::sort(v.begin(), v.end());
         med[sm] = v[steps / 2];
-        // TPC = smid/2; the GPC it belongs to is TPC % 4 (measured in gpc.cu);
-        // its position inside that GPC is TPC / 4.
-        int tpc = sm / 2;
-        printf("l2_topology,%d,%d,%d,%d,%zu,%d,%d,%u,%u,%u\n", sm, tpc % 4, tpc, tpc / 4,
+        int tpc = tpc_of(sm);
+        printf("l2_topology,%d,%d,%d,%d,%zu,%d,%d,%u,%u,%u\n", sm, gpc_of_tpc(tpc), tpc,
+               pos_of_tpc(tpc),
                a.buffer_bytes, steps, a.seed, v[steps / 4], v[steps / 2], v[3 * steps / 4]);
     }
 
-    fprintf(stderr, "=== 1. median latency from every SM (cell = the TPC's two SMs) ===\n");
-    fprintf(stderr, "        pos0     pos1     pos2     pos3     pos4     pos5\n");
-    for (int g = 0; g < 4; g++) {
+    // Header row: one column per TPC position inside a GPC.
+    auto position_header = [](const char* note) {
+        fprintf(stderr, "      ");
+        for (int p = 0; p < NUM_TPC; p++) fprintf(stderr, "   pos%-3d", p);
+        fprintf(stderr, "%s\n", note);
+    };
+
+    fprintf(stderr, "=== 1. median latency from every SM (cell = the SMs of the TPC) ===\n");
+    position_header("");
+    for (int g = 0; g < NUM_GPC; g++) {
         fprintf(stderr, "GPC %d ", g);
-        for (int p = 0; p < 6; p++) {
-            int tpc = p * 4 + g;
-            fprintf(stderr, " %3u/%-3u ", med[2 * tpc], med[2 * tpc + 1]);
+        for (int p = 0; p < NUM_TPC; p++) {
+            int first_sm = tpc_at(g, p) * SMS_PER_TPC;
+            fprintf(stderr, " ");
+            for (int k = 0; k < SMS_PER_TPC; k++)
+                fprintf(stderr, k ? "/%-3u" : "%3u", med[first_sm + k]);
+            fprintf(stderr, " ");
         }
         fprintf(stderr, "\n");
     }
@@ -163,19 +198,20 @@ int main(int argc, char** argv) {
     // The second leg is the same for every TPC in a GPC, so subtracting the
     // row minimum cancels it and leaves the per-TPC distances.
     fprintf(stderr, "\n=== 2. CROSS-CHECK: each row minus its own minimum = per-TPC distance ===\n");
-    fprintf(stderr, "        pos0     pos1     pos2     pos3     pos4     pos5    (TPC id = pos*4 + GPC)\n");
-    for (int g = 0; g < 4; g++) {
+    position_header("   (TPC id = pos * NUM_GPC + GPC)");
+    for (int g = 0; g < NUM_GPC; g++) {
+        // the first SM of each TPC stands for the whole TPC
         unsigned lo = 0xFFFFFFFFu;
-        for (int p = 0; p < 6; p++) lo = std::min(lo, med[2 * (p * 4 + g)]);
+        for (int p = 0; p < NUM_TPC; p++) lo = std::min(lo, med[tpc_at(g, p) * SMS_PER_TPC]);
         fprintf(stderr, "GPC %d ", g);
-        for (int p = 0; p < 6; p++)
-            fprintf(stderr, " %7u ", med[2 * (p * 4 + g)] - lo);
+        for (int p = 0; p < NUM_TPC; p++)
+            fprintf(stderr, " %7u ", med[tpc_at(g, p) * SMS_PER_TPC] - lo);
         fprintf(stderr, "\n");
     }
     fprintf(stderr,
             "\nCompare the GPC 0 row with the w[] vector printed by\n"
             "../latency/dsmem_matrix.cu, which measures SM-to-SM hops instead of\n"
-            "L2 reads. Two unrelated experiments, the same six numbers.\n");
+            "L2 reads. On GB10: two unrelated experiments, the same six numbers.\n");
 
     cudaFree(d); cudaFree(s); cudaFree(ran_on); cudaFree(lat);
     return 0;
