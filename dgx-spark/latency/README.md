@@ -25,17 +25,20 @@ All shared code (chase kernel, Sattolo cycle, CLI parsing, CSV output) is in
 
 ## Build
 
+From the repository root (one Makefile for everything; binaries go to `build/`):
+
 ```sh
-make            # all five, nvcc -O3 -arch=sm_121
-make dsmem_remote
-make clean
+make            # every program, nvcc -O3 -arch=sm_121
+make latency    # just this directory
+make l2         # one program -> build/l2
+make clean      # rm -rf build/
 ```
 
 ## Run one program by hand
 
 ```sh
-./dsmem_remote --cluster-size 4 --distance 1 --reps 11
-./l2 --help
+../../build/dsmem_remote --cluster-size 4 --distance 1 --reps 11
+../../build/l2 --help
 ```
 
 Every program accepts `--reps`, `--steps`, `--seed`, `--warmup` and
