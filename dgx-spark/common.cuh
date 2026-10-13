@@ -14,6 +14,11 @@
 #include <random>
 #include <vector>
 
+// The number of GPCs, TPCs per GPC, and SMs per TPC on the DGX Spark
+const int NUM_GPCs = 4;
+const int NUM_TPCs_PER_GPC = 6;
+const int NUM_SMs_PER_TPC = 2;
+
 #define CUDA_CHECK(call)                                                     \
     do {                                                                     \
         cudaError_t err_ = (call);                                           \
@@ -152,8 +157,8 @@ struct Args {
     int chasers = 0;        // chasing threads per block; 0 = all of them.
                             // Only needed to express "1 thread per SM".
     // dsmem_matrix.cu only:
-    int clusters = 1;       // clusters to launch; 4 covers every GPC at once
-    int active = 0;         // which cluster's reader actually chases
+    int clusters = 1;       // throughput_gpu.cu: clusters to launch, 0 = fill the chip
+    int gpc = 0;            // dsmem_matrix.cu: which GPC is measured
     // dsmem_many_threads*.cu only:
     int access = 0;         // 0 = chase (dependent), 1 = random, 2 = coalesced
     // transfer.cu / kernel_boundary.cu only:
@@ -207,7 +212,7 @@ void parse_args(int argc, char** argv, Args* a, const char* prog,
         else if (strcmp(f, "--buffer-kib") == 0)    a->buffer_bytes = strtoull(v, nullptr, 10) * 1024;
         else if (strcmp(f, "--chasers") == 0)       a->chasers = atoi(v);
         else if (strcmp(f, "--clusters") == 0)      a->clusters = atoi(v);
-        else if (strcmp(f, "--active") == 0)        a->active = atoi(v);
+        else if (strcmp(f, "--gpc") == 0)           a->gpc = atoi(v);
         else if (strcmp(f, "--bytes") == 0)         a->bytes = atoi(v);
         else if (strcmp(f, "--rounds") == 0)        a->rounds = atoi(v);
         else if (strcmp(f, "--src") == 0)           a->src = atoi(v);

@@ -27,12 +27,6 @@
 // walking the identical address sequence through the same warmed, L2-resident
 // buffer.
 //
-// OTHER GPUS. The chip layout is in NUM_GPC, NUM_TPC and SMS_PER_TPC below
-// (GB10: 4 x 6 x 2 = 48 SMs). Set them for your GPU, and check that its SMs
-// are numbered the same way (TPC = smid / SMS_PER_TPC, GPC = TPC % NUM_GPC, as
-// measured for GB10 by ../gpc.cu); the program refuses to run if the SM count
-// does not match the layout. Compile for your GPU's architecture (-arch=sm_XX).
-//
 // Build: make l2_topology      (or: nvcc -O3 -arch=sm_121 l2_topology.cu -o l2_topology)
 // Run:   ./l2_topology [--buffer-bytes N (default 6 MiB)] [--steps N] [--seed N]
 // Output: stdout = one CSV row per SM; stderr = the human-readable report.
@@ -43,19 +37,13 @@
 
 #include "../common.cuh"  // CUDA_CHECK, smid()
 
-// Chip layout. These are GB10's values: change them for another GPU.
-constexpr int NUM_GPC = 4;       // GPCs on the chip
-constexpr int NUM_TPC = 6;       // TPCs in each GPC
-constexpr int SMS_PER_TPC = 2;   // SMs in each TPC
-constexpr int NUM_SM = NUM_GPC * NUM_TPC * SMS_PER_TPC;
-
 // How SM ids map onto the layout (measured for GB10 by ../gpc.cu): the SMs of
 // a TPC are consecutive, and consecutive TPCs go round-robin over the GPCs.
-// So the TPC at position `pos` of GPC `gpc` is TPC pos * NUM_GPC + gpc.
-__host__ __device__ inline int tpc_of(int sm)       { return sm / SMS_PER_TPC; }
-__host__ __device__ inline int gpc_of_tpc(int tpc)  { return tpc % NUM_GPC; }
-__host__ __device__ inline int pos_of_tpc(int tpc)  { return tpc / NUM_GPC; }
-__host__ __device__ inline int tpc_at(int gpc, int pos) { return pos * NUM_GPC + gpc; }
+// So the TPC at position `pos` of GPC `gpc` is TPC pos * NUM_GPCs + TPC.
+__host__ __device__ inline int tpc_of(int sm)       { return sm / NUM_SMs_PER_TPC; }
+__host__ __device__ inline int gpc_of_tpc(int tpc)  { return tpc % NUM_GPCs; }
+__host__ __device__ inline int pos_of_tpc(int tpc)  { return tpc / NUM_GPCs; }
+__host__ __device__ inline int tpc_at(int gpc, int pos) { return pos * NUM_GPCs + gpc; }
 
 // One block per SM (the host requests >50% of an SM's shared memory), so
 // exactly one block sees smid() == target_sm. Times every load individually.
@@ -100,12 +88,6 @@ int main(int argc, char** argv) {
     CUDA_CHECK(cudaGetDeviceProperties(&prop, 0));
     size_t n = a.buffer_bytes / sizeof(unsigned);
     int nsm = prop.multiProcessorCount;
-    if (nsm != NUM_SM) {
-        fprintf(stderr, "l2_topology: this GPU has %d SMs, but the layout NUM_GPC x NUM_TPC x "
-                        "SMS_PER_TPC = %d x %d x %d = %d. Set the layout for this GPU.\n",
-                nsm, NUM_GPC, NUM_TPC, SMS_PER_TPC, NUM_SM);
-        return 1;
-    }
 
     std::mt19937 rng(a.seed);
     std::vector<unsigned> h(n);
@@ -175,18 +157,18 @@ int main(int argc, char** argv) {
     // Header row: one column per TPC position inside a GPC.
     auto position_header = [](const char* note) {
         fprintf(stderr, "      ");
-        for (int p = 0; p < NUM_TPC; p++) fprintf(stderr, "   pos%-3d", p);
+        for (int p = 0; p < NUM_TPCs_PER_GPC; p++) fprintf(stderr, "   pos%-3d", p);
         fprintf(stderr, "%s\n", note);
     };
 
     fprintf(stderr, "=== 1. median latency from every SM (cell = the SMs of the TPC) ===\n");
     position_header("");
-    for (int g = 0; g < NUM_GPC; g++) {
+    for (int g = 0; g < NUM_GPCs; g++) {
         fprintf(stderr, "GPC %d ", g);
-        for (int p = 0; p < NUM_TPC; p++) {
-            int first_sm = tpc_at(g, p) * SMS_PER_TPC;
+        for (int p = 0; p < NUM_TPCs_PER_GPC; p++) {
+            int first_sm = tpc_at(g, p) * NUM_SMs_PER_TPC;
             fprintf(stderr, " ");
-            for (int k = 0; k < SMS_PER_TPC; k++)
+            for (int k = 0; k < NUM_SMs_PER_TPC; k++)
                 fprintf(stderr, k ? "/%-3u" : "%3u", med[first_sm + k]);
             fprintf(stderr, " ");
         }
@@ -198,14 +180,14 @@ int main(int argc, char** argv) {
     // The second leg is the same for every TPC in a GPC, so subtracting the
     // row minimum cancels it and leaves the per-TPC distances.
     fprintf(stderr, "\n=== 2. CROSS-CHECK: each row minus its own minimum = per-TPC distance ===\n");
-    position_header("   (TPC id = pos * NUM_GPC + GPC)");
-    for (int g = 0; g < NUM_GPC; g++) {
+    position_header("   (TPC id = pos * NUM_GPCs + GPC)");
+    for (int g = 0; g < NUM_GPCs; g++) {
         // the first SM of each TPC stands for the whole TPC
         unsigned lo = 0xFFFFFFFFu;
-        for (int p = 0; p < NUM_TPC; p++) lo = std::min(lo, med[tpc_at(g, p) * SMS_PER_TPC]);
+        for (int p = 0; p < NUM_TPCs_PER_GPC; p++) lo = std::min(lo, med[tpc_at(g, p) * NUM_SMs_PER_TPC]);
         fprintf(stderr, "GPC %d ", g);
-        for (int p = 0; p < NUM_TPC; p++)
-            fprintf(stderr, " %7u ", med[tpc_at(g, p) * SMS_PER_TPC] - lo);
+        for (int p = 0; p < NUM_TPCs_PER_GPC; p++)
+            fprintf(stderr, " %7u ", med[tpc_at(g, p) * NUM_SMs_PER_TPC] - lo);
         fprintf(stderr, "\n");
     }
     fprintf(stderr,
