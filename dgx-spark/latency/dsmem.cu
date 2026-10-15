@@ -50,7 +50,6 @@ __global__ void matrix_chase(const unsigned* __restrict__ perm, int reader,
 
 int main(int argc, char** argv) {
     Args a;
-    a.reps = 21;   // 144 cells, so a smaller default than the other programs
     parse_args(argc, argv, &a, "dsmem",
                "  --cluster-size N  blocks per cluster, 2..12              (default 12)\n"
                "  --gpc N           which GPC is measured, 0..3            (default 0)\n");
