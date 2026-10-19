@@ -1,0 +1,39 @@
+# SbatchMan batch definition: the cost of one barrier (barrier.cu).
+#
+# Run from THIS directory (the job's working directory is where you launch):
+#     sbatchman launch -f experiments.yaml
+#     sbatchman launch -f experiments.yaml -t 'barrier_cluster*'   # only some jobs
+#
+# SbatchMan takes the cartesian product of the `variables` used by a command
+# and substitutes {name}. Tags become directory names under
+# SbatchMan/experiments/<cluster>/<config>/<tag>/<timestamp>/, so each tag
+# carries the parameters that identify the job.
+
+variables:
+  reps: [21]
+
+jobs:
+  # Block barrier: grows with the number of warps that must arrive.
+  - config: local
+    tag: barrier_syncthreads_block_size_{block_size}
+    variables:
+      block_size: [32, 64, 128, 256, 512, 1024]
+    command: "../../build/barrier --barrier syncthreads --block-size {block_size} --reps {reps}"
+
+  # Cluster barrier, with release (cluster.sync()) and relaxed: the
+  # difference is the price of making the writes visible. One cluster alone,
+  # and as many as fit on the chip at once (--clusters 0).
+  - config: local
+    tag: barrier_{barrier}_cluster_size_{cluster_size}_clusters_{clusters}
+    variables:
+      barrier: [cluster, cluster-relaxed]
+      cluster_size: [2, 4, 8, 12]
+      clusters: [1, 0]
+    command: "../../build/barrier --barrier {barrier} --cluster-size {cluster_size} --clusters {clusters} --reps {reps}"
+
+  # Grid barrier (cooperative groups): from 1 block to two per SM.
+  - config: local
+    tag: barrier_grid_blocks_{blocks}
+    variables:
+      blocks: [1, 2, 4, 8, 12, 24, 48, 96]
+    command: "../../build/barrier --barrier grid --blocks {blocks} --reps {reps}"

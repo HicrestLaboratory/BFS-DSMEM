@@ -168,6 +168,17 @@ struct Args {
     int rounds = 1000;      // messages (or kernel launches) per repetition
     int src = 10;           // sending rank; 10 -> 11 is the fastest DSMEM pair
     int dst = 11;           // receiving rank
+    // a2av.cu only:
+    const char* trace = nullptr;  // axccl *_pairs.log with the pattern to replay
+    size_t avg_msgsize = 0;       // which of its message sizes to replay
+    // throughput/smem.cu, barriers/barrier.cu, atomics/atomic.cu: each program
+    // checks the values of the flags it uses.
+    const char* op = nullptr;       // smem.cu: read | write;  atomic.cu: add | fetch-add
+    const char* barrier = nullptr;  // barrier.cu: syncthreads | cluster | cluster-relaxed | grid
+    const char* memory = nullptr;   // atomic.cu: smem | dsmem | global
+    int width = 16;                 // smem.cu: bytes per access, 4 | 8 | 16
+    int counters = 1;               // atomic.cu: distinct addresses the threads share
+    int blocks = 0;                 // barrier.cu --barrier grid: blocks, 0 = one per SM
 };
 
 // transfer.cu: the ways to move bytes from one SM's shared memory to another's.
@@ -215,6 +226,14 @@ void parse_args(int argc, char** argv, Args* a, const char* prog,
         else if (strcmp(f, "--rounds") == 0)        a->rounds = atoi(v);
         else if (strcmp(f, "--src") == 0)           a->src = atoi(v);
         else if (strcmp(f, "--dst") == 0)           a->dst = atoi(v);
+        else if (strcmp(f, "--trace") == 0)         a->trace = v;
+        else if (strcmp(f, "--avg-msgsize") == 0)   a->avg_msgsize = strtoull(v, nullptr, 10);
+        else if (strcmp(f, "--op") == 0)            a->op = v;
+        else if (strcmp(f, "--barrier") == 0)       a->barrier = v;
+        else if (strcmp(f, "--memory") == 0)        a->memory = v;
+        else if (strcmp(f, "--width") == 0)         a->width = atoi(v);
+        else if (strcmp(f, "--counters") == 0)      a->counters = atoi(v);
+        else if (strcmp(f, "--blocks") == 0)        a->blocks = atoi(v);
         else if (strcmp(f, "--method") == 0) {
             a->method = -1;
             for (int m = 0; m < N_TRANSFER_METHODS; m++)
@@ -226,9 +245,13 @@ void parse_args(int argc, char** argv, Args* a, const char* prog,
             }
         }
         else if (strcmp(f, "--mode") == 0) {
-            if (strcmp(v, "pingpong") == 0)    a->mode = 0;
-            else if (strcmp(v, "stream") == 0) a->mode = 1;
-            else { fprintf(stderr, "%s: --mode must be pingpong or stream\n", prog); exit(1); }
+            // transfer.cu says pingpong / stream, atomic.cu latency / throughput:
+            // the same two ideas, one message (or operation) at a time vs as many
+            // as possible.
+            if (strcmp(v, "pingpong") == 0 || strcmp(v, "latency") == 0)        a->mode = 0;
+            else if (strcmp(v, "stream") == 0 || strcmp(v, "throughput") == 0) a->mode = 1;
+            else { fprintf(stderr, "%s: --mode must be pingpong / latency or stream / "
+                                   "throughput\n", prog); exit(1); }
         }
         else if (strcmp(f, "--access") == 0) {
             if (strcmp(v, "chase") == 0 || strcmp(v, "pchase") == 0) a->access = 0;
