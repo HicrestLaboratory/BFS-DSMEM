@@ -1,0 +1,438 @@
+{
+  "version": 3,
+  "activeTabIndex": 0,
+  "tabs": [
+    {
+      "version": 3,
+      "label": "Chain latency",
+      "mode": "grid",
+      "rendererBackend": "matplotlib",
+      "single": {
+        "database": "data",
+        "sql": "SELECT buffer_kib, cycles_per_load\nFROM latency\nWHERE component IN ('l1', 'l2', 'dram') AND stride_bytes = 0",
+        "plotType": "line",
+        "x": "buffer_kib",
+        "y": [
+          "cycles_per_load"
+        ],
+        "showLegend": true,
+        "transformScript": "# The L1, L2 and DRAM buffer sweeps form one curve: one point per buffer\n# size, the median over the repetitions.\ndf = df.groupby('buffer_kib', as_index=False)['cycles_per_load'].median()\ndf = df.sort_values('buffer_kib')",
+        "layoutScript": "# Redraws the figure like dgx-spark/latency/plot/plot_chain.py, in the house style\n# of plotstyle.py, so it matches the slide image.\nimport matplotlib as mpl\nHOUSE = {\n    \"font.size\": 18, \"axes.titlesize\": 18, \"axes.labelsize\": 18,\n    \"xtick.labelsize\": 16, \"ytick.labelsize\": 16, \"legend.fontsize\": 9,\n    \"legend.title_fontsize\": 12, \"figure.titlesize\": 20,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"axes.grid\": True, \"grid.alpha\": 0.3, \"lines.linewidth\": 2.2, \"lines.markersize\": 6,\n}\n\ndef start(fig, size):\n    \"\"\"Throw away the default rendering and start a clean figure in the house style.\"\"\"\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(*size)\n\nL1_SRAM_KIB = 128           # unified L1 + shared memory per SM\nL2_KIB = 24 * 1024          # 24 MiB\n\ndef customize_matplotlib(fig, ax, config):\n    start(fig, (10, 5.5))\n    ax = fig.add_subplot()\n    ax.plot(df[\"buffer_kib\"], df[\"cycles_per_load\"], marker=\"o\")\n\n    # The two capacities the curve should step at.\n    ymax = df[\"cycles_per_load\"].max()\n    for x, name, yf in [(L1_SRAM_KIB, \" 128 KiB\\n L1 + SMEM\", 0.60), (L2_KIB, \" 24 MiB\\n L2\", 0.26)]:\n        ax.axvline(x, color=\"gray\", ls=\":\", lw=1.5)\n        ax.text(x, ymax * yf, name, ha=\"left\", va=\"top\", fontsize=14, color=\"gray\")\n\n    ax.set_xscale(\"log\", base=2)\n    ticks = [1, 4, 16, 64, 256, 1024, 4096, 16384, 65536, 262144, 1048576]\n    lo, hi = df[\"buffer_kib\"].min(), df[\"buffer_kib\"].max()\n    ax.set_xticks([t for t in ticks if lo <= t <= hi])\n    ax.set_xticklabels([f\"{t} KiB\" if t < 1024 else f\"{t // 1024} MiB\" for t in ax.get_xticks()],\n                       rotation=45, ha=\"right\")\n    ax.set_xlabel(\"buffer size (KiB/MiB)\")\n    ax.set_ylabel(\"latency (cycles per load)\")\n    ax.grid(True, which=\"both\", alpha=0.3)\n",
+        "errorStyle": "bars"
+      },
+      "grid": {
+        "rows": 1,
+        "cols": 1,
+        "activePanelIndex": 0,
+        "panels": [
+          {
+            "database": "data",
+            "sql": "SELECT buffer_kib, cycles_per_load\nFROM latency\nWHERE component IN ('l1', 'l2', 'dram') AND stride_bytes = 0\nORDER BY buffer_kib",
+            "plotType": "line",
+            "x": "buffer_kib",
+            "y": [
+              "cycles_per_load"
+            ],
+            "showLegend": true,
+            "transformScript": "# The L1, L2 and DRAM buffer sweeps form one curve: one point per buffer\n# size, the median over the repetitions.\ndf = df.groupby('buffer_kib', as_index=False)['cycles_per_load'].median()",
+            "layoutScript": "# Redraws the figure like dgx-spark/latency/plot/plot_chain.py, in the house style\n# of plotstyle.py, so it matches the slide image.\nimport matplotlib as mpl\nHOUSE = {\n    \"font.size\": 18, \"axes.titlesize\": 18, \"axes.labelsize\": 18,\n    \"xtick.labelsize\": 16, \"ytick.labelsize\": 16, \"legend.fontsize\": 9,\n    \"legend.title_fontsize\": 12, \"figure.titlesize\": 20,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"axes.grid\": True, \"grid.alpha\": 0.3, \"lines.linewidth\": 2.2, \"lines.markersize\": 6,\n}\n\ndef start(fig, size):\n    \"\"\"Throw away the default rendering and start a clean figure in the house style.\"\"\"\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(*size)\n\nL1_SRAM_KIB = 128           # unified L1 + shared memory per SM\nL2_KIB = 24 * 1024          # 24 MiB\n\ndef customize_matplotlib(fig, ax, config):\n    start(fig, (10, 5.5))\n    ax = fig.add_subplot()\n    ax.plot(df[\"buffer_kib\"], df[\"cycles_per_load\"], marker=\"o\")\n\n    # The two capacities the curve should step at.\n    ymax = df[\"cycles_per_load\"].max()\n    for x, name, yf in [(L1_SRAM_KIB, \" 128 KiB\\n L1 + SMEM\", 0.60), (L2_KIB, \" 24 MiB\\n L2\", 0.26)]:\n        ax.axvline(x, color=\"gray\", ls=\":\", lw=1.5)\n        ax.text(x, ymax * yf, name, ha=\"left\", va=\"top\", fontsize=14, color=\"gray\")\n\n    ax.set_xscale(\"log\", base=2)\n    ticks = [1, 4, 16, 64, 256, 1024, 4096, 16384, 65536, 262144, 1048576]\n    lo, hi = df[\"buffer_kib\"].min(), df[\"buffer_kib\"].max()\n    ax.set_xticks([t for t in ticks if lo <= t <= hi])\n    ax.set_xticklabels([f\"{t} KiB\" if t < 1024 else f\"{t // 1024} MiB\" for t in ax.get_xticks()],\n                       rotation=45, ha=\"right\")\n    ax.set_xlabel(\"buffer size (KiB/MiB)\")\n    ax.set_ylabel(\"latency (cycles per load)\")\n    ax.grid(True, which=\"both\", alpha=0.3)\n",
+            "errorStyle": "bars"
+          }
+        ],
+        "shareX": false,
+        "shareY": false,
+        "shareXMode": "none",
+        "shareYMode": "none",
+        "xgap": 0.2,
+        "ygap": 0.24,
+        "panelLabels": false,
+        "facetByGroup": false,
+        "legendPosition": "right",
+        "legendTitle": "",
+        "showLegend": true,
+        "shareLegend": true,
+        "facetGroupCols": [],
+        "facetAxis": "cols",
+        "facetCount": 2,
+        "groupBy": [],
+        "figureWidth": 0,
+        "figureHeight": 0,
+        "subplotWidth": 4,
+        "subplotHeight": 3.3,
+        "facetLabelFormat": "{column}={value}"
+      }
+    },
+    {
+      "version": 3,
+      "label": "Stride: shared memory",
+      "mode": "grid",
+      "rendererBackend": "matplotlib",
+      "single": {
+        "database": "data",
+        "sql": "SELECT stride_bytes, cycles_per_load\nFROM latency\nWHERE component = 'smem'",
+        "plotType": "line",
+        "x": "stride_bytes",
+        "y": [
+          "cycles_per_load"
+        ],
+        "showLegend": true,
+        "transformScript": "# One point per stride: the median over the repetitions. stride_bytes = 0\n# is the run without --stride (random cycle), drawn as the reference line.\ndf = df.groupby('stride_bytes', as_index=False)['cycles_per_load'].median()",
+        "layoutScript": "# Redraws the figure like dgx-spark/latency/plot/plot_stride.py, in the house style\n# of plotstyle.py, so it matches the slide image.\nimport matplotlib as mpl\nHOUSE = {\n    \"font.size\": 18, \"axes.titlesize\": 18, \"axes.labelsize\": 18,\n    \"xtick.labelsize\": 16, \"ytick.labelsize\": 16, \"legend.fontsize\": 9,\n    \"legend.title_fontsize\": 12, \"figure.titlesize\": 20,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"axes.grid\": True, \"grid.alpha\": 0.3, \"lines.linewidth\": 2.2, \"lines.markersize\": 6,\n}\n\ndef start(fig, size):\n    \"\"\"Throw away the default rendering and start a clean figure in the house style.\"\"\"\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(*size)\n\nimport math\nfrom matplotlib.ticker import NullFormatter, ScalarFormatter\nTITLE = \"Shared memory\"\n\ndef customize_matplotlib(fig, ax, config):\n    start(fig, (8, 5))\n    # These four go on one slide at a quarter of its width each, so the type\n    # is pushed above the house size.\n    mpl.rcParams.update({\"font.size\": 24, \"axes.titlesize\": 26, \"axes.labelsize\": 24,\n                         \"xtick.labelsize\": 22, \"ytick.labelsize\": 22})\n    ax = fig.add_subplot()\n\n    strided = df[df[\"stride_bytes\"] > 0].sort_values(\"stride_bytes\")\n    (line,) = ax.plot(strided[\"stride_bytes\"], strided[\"cycles_per_load\"],\n                      marker=\"o\", markersize=5, linewidth=2.8)\n    # The random cycle (the run without --stride) as a dashed reference line.\n    random = df[df[\"stride_bytes\"] == 0]\n    if not random.empty:\n        ax.axhline(random[\"cycles_per_load\"].iloc[0], linestyle=\"--\", linewidth=2,\n                   color=line.get_color(), alpha=0.7)\n\n    ax.set_xscale(\"log\", base=2)\n    # Label every other power of two: at this type size all eleven would collide.\n    strides = sorted(strided[\"stride_bytes\"].unique())\n    ax.set_xticks([x for x in strides if round(math.log2(x)) % 2 == 0])\n    ax.xaxis.set_major_formatter(ScalarFormatter())\n    ax.xaxis.set_minor_formatter(NullFormatter())\n    ax.set_xlabel(\"stride (bytes)\", labelpad=10)\n    ax.set_ylabel(\"latency (cycles per load)\", labelpad=12)\n    ax.set_title(TITLE, fontweight=\"normal\")\n    ax.grid(True, which=\"major\", alpha=0.3)\n",
+        "errorStyle": "bars"
+      },
+      "grid": {
+        "rows": 1,
+        "cols": 1,
+        "activePanelIndex": 0,
+        "panels": [
+          {
+            "database": "data",
+            "sql": "SELECT stride_bytes, cycles_per_load\nFROM latency\nWHERE component = 'smem'",
+            "plotType": "line",
+            "x": "stride_bytes",
+            "y": [
+              "cycles_per_load"
+            ],
+            "showLegend": true,
+            "transformScript": "# One point per stride: the median over the repetitions. stride_bytes = 0\n# is the run without --stride (random cycle), drawn as the reference line.\ndf = df.groupby('stride_bytes', as_index=False)['cycles_per_load'].median()",
+            "layoutScript": "# Redraws the figure like dgx-spark/latency/plot/plot_stride.py, in the house style\n# of plotstyle.py, so it matches the slide image.\nimport matplotlib as mpl\nHOUSE = {\n    \"font.size\": 18, \"axes.titlesize\": 18, \"axes.labelsize\": 18,\n    \"xtick.labelsize\": 16, \"ytick.labelsize\": 16, \"legend.fontsize\": 9,\n    \"legend.title_fontsize\": 12, \"figure.titlesize\": 20,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"axes.grid\": True, \"grid.alpha\": 0.3, \"lines.linewidth\": 2.2, \"lines.markersize\": 6,\n}\n\ndef start(fig, size):\n    \"\"\"Throw away the default rendering and start a clean figure in the house style.\"\"\"\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(*size)\n\nimport math\nfrom matplotlib.ticker import NullFormatter, ScalarFormatter\nTITLE = \"Shared memory\"\n\ndef customize_matplotlib(fig, ax, config):\n    start(fig, (8, 5))\n    # These four go on one slide at a quarter of its width each, so the type\n    # is pushed above the house size.\n    mpl.rcParams.update({\"font.size\": 24, \"axes.titlesize\": 26, \"axes.labelsize\": 24,\n                         \"xtick.labelsize\": 22, \"ytick.labelsize\": 22})\n    ax = fig.add_subplot()\n\n    strided = df[df[\"stride_bytes\"] > 0].sort_values(\"stride_bytes\")\n    (line,) = ax.plot(strided[\"stride_bytes\"], strided[\"cycles_per_load\"],\n                      marker=\"o\", markersize=5, linewidth=2.8)\n    # The random cycle (the run without --stride) as a dashed reference line.\n    random = df[df[\"stride_bytes\"] == 0]\n    if not random.empty:\n        ax.axhline(random[\"cycles_per_load\"].iloc[0], linestyle=\"--\", linewidth=2,\n                   color=line.get_color(), alpha=0.7)\n\n    ax.set_xscale(\"log\", base=2)\n    # Label every other power of two: at this type size all eleven would collide.\n    strides = sorted(strided[\"stride_bytes\"].unique())\n    ax.set_xticks([x for x in strides if round(math.log2(x)) % 2 == 0])\n    ax.xaxis.set_major_formatter(ScalarFormatter())\n    ax.xaxis.set_minor_formatter(NullFormatter())\n    ax.set_xlabel(\"stride (bytes)\", labelpad=10)\n    ax.set_ylabel(\"latency (cycles per load)\", labelpad=12)\n    ax.set_title(TITLE, fontweight=\"normal\")\n    ax.grid(True, which=\"major\", alpha=0.3)\n",
+            "errorStyle": "bars"
+          }
+        ],
+        "shareX": false,
+        "shareY": false,
+        "shareXMode": "none",
+        "shareYMode": "none",
+        "xgap": 0.2,
+        "ygap": 0.24,
+        "panelLabels": false,
+        "facetByGroup": false,
+        "legendPosition": "right",
+        "legendTitle": "",
+        "showLegend": true,
+        "shareLegend": true,
+        "facetGroupCols": [],
+        "facetAxis": "cols",
+        "facetCount": 2,
+        "groupBy": [],
+        "figureWidth": 0,
+        "figureHeight": 0,
+        "subplotWidth": 4,
+        "subplotHeight": 3.3,
+        "facetLabelFormat": "{column}={value}"
+      }
+    },
+    {
+      "version": 3,
+      "label": "Stride: DSMEM",
+      "mode": "grid",
+      "rendererBackend": "matplotlib",
+      "single": {
+        "database": "data",
+        "sql": "SELECT stride_bytes, cycles_per_load\nFROM latency\nWHERE component = 'dsmem' AND cluster_size = 2 AND reader = 0 AND target = 1",
+        "plotType": "line",
+        "x": "stride_bytes",
+        "y": [
+          "cycles_per_load"
+        ],
+        "showLegend": true,
+        "transformScript": "# One point per stride: the median over the repetitions. stride_bytes = 0\n# is the run without --stride (random cycle), drawn as the reference line.\ndf = df.groupby('stride_bytes', as_index=False)['cycles_per_load'].median()",
+        "layoutScript": "# Redraws the figure like dgx-spark/latency/plot/plot_stride.py, in the house style\n# of plotstyle.py, so it matches the slide image.\nimport matplotlib as mpl\nHOUSE = {\n    \"font.size\": 18, \"axes.titlesize\": 18, \"axes.labelsize\": 18,\n    \"xtick.labelsize\": 16, \"ytick.labelsize\": 16, \"legend.fontsize\": 9,\n    \"legend.title_fontsize\": 12, \"figure.titlesize\": 20,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"axes.grid\": True, \"grid.alpha\": 0.3, \"lines.linewidth\": 2.2, \"lines.markersize\": 6,\n}\n\ndef start(fig, size):\n    \"\"\"Throw away the default rendering and start a clean figure in the house style.\"\"\"\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(*size)\n\nimport math\nfrom matplotlib.ticker import NullFormatter, ScalarFormatter\nTITLE = \"DSMEM (rank 0 → rank 1)\"\n\ndef customize_matplotlib(fig, ax, config):\n    start(fig, (8, 5))\n    # These four go on one slide at a quarter of its width each, so the type\n    # is pushed above the house size.\n    mpl.rcParams.update({\"font.size\": 24, \"axes.titlesize\": 26, \"axes.labelsize\": 24,\n                         \"xtick.labelsize\": 22, \"ytick.labelsize\": 22})\n    ax = fig.add_subplot()\n\n    strided = df[df[\"stride_bytes\"] > 0].sort_values(\"stride_bytes\")\n    (line,) = ax.plot(strided[\"stride_bytes\"], strided[\"cycles_per_load\"],\n                      marker=\"o\", markersize=5, linewidth=2.8)\n    # The random cycle (the run without --stride) as a dashed reference line.\n    random = df[df[\"stride_bytes\"] == 0]\n    if not random.empty:\n        ax.axhline(random[\"cycles_per_load\"].iloc[0], linestyle=\"--\", linewidth=2,\n                   color=line.get_color(), alpha=0.7)\n\n    ax.set_xscale(\"log\", base=2)\n    # Label every other power of two: at this type size all eleven would collide.\n    strides = sorted(strided[\"stride_bytes\"].unique())\n    ax.set_xticks([x for x in strides if round(math.log2(x)) % 2 == 0])\n    ax.xaxis.set_major_formatter(ScalarFormatter())\n    ax.xaxis.set_minor_formatter(NullFormatter())\n    ax.set_xlabel(\"stride (bytes)\", labelpad=10)\n    ax.set_ylabel(\"latency (cycles per load)\", labelpad=12)\n    ax.set_title(TITLE, fontweight=\"normal\")\n    ax.grid(True, which=\"major\", alpha=0.3)\n",
+        "errorStyle": "bars"
+      },
+      "grid": {
+        "rows": 1,
+        "cols": 1,
+        "activePanelIndex": 0,
+        "panels": [
+          {
+            "database": "data",
+            "sql": "SELECT stride_bytes, cycles_per_load\nFROM latency\nWHERE component = 'dsmem' AND cluster_size = 2 AND reader = 0 AND target = 1",
+            "plotType": "line",
+            "x": "stride_bytes",
+            "y": [
+              "cycles_per_load"
+            ],
+            "showLegend": true,
+            "transformScript": "# One point per stride: the median over the repetitions. stride_bytes = 0\n# is the run without --stride (random cycle), drawn as the reference line.\ndf = df.groupby('stride_bytes', as_index=False)['cycles_per_load'].median()",
+            "layoutScript": "# Redraws the figure like dgx-spark/latency/plot/plot_stride.py, in the house style\n# of plotstyle.py, so it matches the slide image.\nimport matplotlib as mpl\nHOUSE = {\n    \"font.size\": 18, \"axes.titlesize\": 18, \"axes.labelsize\": 18,\n    \"xtick.labelsize\": 16, \"ytick.labelsize\": 16, \"legend.fontsize\": 9,\n    \"legend.title_fontsize\": 12, \"figure.titlesize\": 20,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"axes.grid\": True, \"grid.alpha\": 0.3, \"lines.linewidth\": 2.2, \"lines.markersize\": 6,\n}\n\ndef start(fig, size):\n    \"\"\"Throw away the default rendering and start a clean figure in the house style.\"\"\"\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(*size)\n\nimport math\nfrom matplotlib.ticker import NullFormatter, ScalarFormatter\nTITLE = \"DSMEM (rank 0 → rank 1)\"\n\ndef customize_matplotlib(fig, ax, config):\n    start(fig, (8, 5))\n    # These four go on one slide at a quarter of its width each, so the type\n    # is pushed above the house size.\n    mpl.rcParams.update({\"font.size\": 24, \"axes.titlesize\": 26, \"axes.labelsize\": 24,\n                         \"xtick.labelsize\": 22, \"ytick.labelsize\": 22})\n    ax = fig.add_subplot()\n\n    strided = df[df[\"stride_bytes\"] > 0].sort_values(\"stride_bytes\")\n    (line,) = ax.plot(strided[\"stride_bytes\"], strided[\"cycles_per_load\"],\n                      marker=\"o\", markersize=5, linewidth=2.8)\n    # The random cycle (the run without --stride) as a dashed reference line.\n    random = df[df[\"stride_bytes\"] == 0]\n    if not random.empty:\n        ax.axhline(random[\"cycles_per_load\"].iloc[0], linestyle=\"--\", linewidth=2,\n                   color=line.get_color(), alpha=0.7)\n\n    ax.set_xscale(\"log\", base=2)\n    # Label every other power of two: at this type size all eleven would collide.\n    strides = sorted(strided[\"stride_bytes\"].unique())\n    ax.set_xticks([x for x in strides if round(math.log2(x)) % 2 == 0])\n    ax.xaxis.set_major_formatter(ScalarFormatter())\n    ax.xaxis.set_minor_formatter(NullFormatter())\n    ax.set_xlabel(\"stride (bytes)\", labelpad=10)\n    ax.set_ylabel(\"latency (cycles per load)\", labelpad=12)\n    ax.set_title(TITLE, fontweight=\"normal\")\n    ax.grid(True, which=\"major\", alpha=0.3)\n",
+            "errorStyle": "bars"
+          }
+        ],
+        "shareX": false,
+        "shareY": false,
+        "shareXMode": "none",
+        "shareYMode": "none",
+        "xgap": 0.2,
+        "ygap": 0.24,
+        "panelLabels": false,
+        "facetByGroup": false,
+        "legendPosition": "right",
+        "legendTitle": "",
+        "showLegend": true,
+        "shareLegend": true,
+        "facetGroupCols": [],
+        "facetAxis": "cols",
+        "facetCount": 2,
+        "groupBy": [],
+        "figureWidth": 0,
+        "figureHeight": 0,
+        "subplotWidth": 4,
+        "subplotHeight": 3.3,
+        "facetLabelFormat": "{column}={value}"
+      }
+    },
+    {
+      "version": 3,
+      "label": "Stride: L2",
+      "mode": "grid",
+      "rendererBackend": "matplotlib",
+      "single": {
+        "database": "data",
+        "sql": "SELECT stride_bytes, cycles_per_load\nFROM latency\nWHERE component = 'l2' AND buffer_kib = 6144",
+        "plotType": "line",
+        "x": "stride_bytes",
+        "y": [
+          "cycles_per_load"
+        ],
+        "showLegend": true,
+        "transformScript": "# One point per stride: the median over the repetitions. stride_bytes = 0\n# is the run without --stride (random cycle), drawn as the reference line.\ndf = df.groupby('stride_bytes', as_index=False)['cycles_per_load'].median()",
+        "layoutScript": "# Redraws the figure like dgx-spark/latency/plot/plot_stride.py, in the house style\n# of plotstyle.py, so it matches the slide image.\nimport matplotlib as mpl\nHOUSE = {\n    \"font.size\": 18, \"axes.titlesize\": 18, \"axes.labelsize\": 18,\n    \"xtick.labelsize\": 16, \"ytick.labelsize\": 16, \"legend.fontsize\": 9,\n    \"legend.title_fontsize\": 12, \"figure.titlesize\": 20,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"axes.grid\": True, \"grid.alpha\": 0.3, \"lines.linewidth\": 2.2, \"lines.markersize\": 6,\n}\n\ndef start(fig, size):\n    \"\"\"Throw away the default rendering and start a clean figure in the house style.\"\"\"\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(*size)\n\nimport math\nfrom matplotlib.ticker import NullFormatter, ScalarFormatter\nTITLE = \"L2 cache\"\n\ndef customize_matplotlib(fig, ax, config):\n    start(fig, (8, 5))\n    # These four go on one slide at a quarter of its width each, so the type\n    # is pushed above the house size.\n    mpl.rcParams.update({\"font.size\": 24, \"axes.titlesize\": 26, \"axes.labelsize\": 24,\n                         \"xtick.labelsize\": 22, \"ytick.labelsize\": 22})\n    ax = fig.add_subplot()\n\n    strided = df[df[\"stride_bytes\"] > 0].sort_values(\"stride_bytes\")\n    (line,) = ax.plot(strided[\"stride_bytes\"], strided[\"cycles_per_load\"],\n                      marker=\"o\", markersize=5, linewidth=2.8)\n    # The random cycle (the run without --stride) as a dashed reference line.\n    random = df[df[\"stride_bytes\"] == 0]\n    if not random.empty:\n        ax.axhline(random[\"cycles_per_load\"].iloc[0], linestyle=\"--\", linewidth=2,\n                   color=line.get_color(), alpha=0.7)\n\n    ax.set_xscale(\"log\", base=2)\n    # Label every other power of two: at this type size all eleven would collide.\n    strides = sorted(strided[\"stride_bytes\"].unique())\n    ax.set_xticks([x for x in strides if round(math.log2(x)) % 2 == 0])\n    ax.xaxis.set_major_formatter(ScalarFormatter())\n    ax.xaxis.set_minor_formatter(NullFormatter())\n    ax.set_xlabel(\"stride (bytes)\", labelpad=10)\n    ax.set_ylabel(\"latency (cycles per load)\", labelpad=12)\n    ax.set_title(TITLE, fontweight=\"normal\")\n    ax.grid(True, which=\"major\", alpha=0.3)\n",
+        "errorStyle": "bars"
+      },
+      "grid": {
+        "rows": 1,
+        "cols": 1,
+        "activePanelIndex": 0,
+        "panels": [
+          {
+            "database": "data",
+            "sql": "SELECT stride_bytes, cycles_per_load\nFROM latency\nWHERE component = 'l2' AND buffer_kib = 6144",
+            "plotType": "line",
+            "x": "stride_bytes",
+            "y": [
+              "cycles_per_load"
+            ],
+            "showLegend": true,
+            "transformScript": "# One point per stride: the median over the repetitions. stride_bytes = 0\n# is the run without --stride (random cycle), drawn as the reference line.\ndf = df.groupby('stride_bytes', as_index=False)['cycles_per_load'].median()",
+            "layoutScript": "# Redraws the figure like dgx-spark/latency/plot/plot_stride.py, in the house style\n# of plotstyle.py, so it matches the slide image.\nimport matplotlib as mpl\nHOUSE = {\n    \"font.size\": 18, \"axes.titlesize\": 18, \"axes.labelsize\": 18,\n    \"xtick.labelsize\": 16, \"ytick.labelsize\": 16, \"legend.fontsize\": 9,\n    \"legend.title_fontsize\": 12, \"figure.titlesize\": 20,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"axes.grid\": True, \"grid.alpha\": 0.3, \"lines.linewidth\": 2.2, \"lines.markersize\": 6,\n}\n\ndef start(fig, size):\n    \"\"\"Throw away the default rendering and start a clean figure in the house style.\"\"\"\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(*size)\n\nimport math\nfrom matplotlib.ticker import NullFormatter, ScalarFormatter\nTITLE = \"L2 cache\"\n\ndef customize_matplotlib(fig, ax, config):\n    start(fig, (8, 5))\n    # These four go on one slide at a quarter of its width each, so the type\n    # is pushed above the house size.\n    mpl.rcParams.update({\"font.size\": 24, \"axes.titlesize\": 26, \"axes.labelsize\": 24,\n                         \"xtick.labelsize\": 22, \"ytick.labelsize\": 22})\n    ax = fig.add_subplot()\n\n    strided = df[df[\"stride_bytes\"] > 0].sort_values(\"stride_bytes\")\n    (line,) = ax.plot(strided[\"stride_bytes\"], strided[\"cycles_per_load\"],\n                      marker=\"o\", markersize=5, linewidth=2.8)\n    # The random cycle (the run without --stride) as a dashed reference line.\n    random = df[df[\"stride_bytes\"] == 0]\n    if not random.empty:\n        ax.axhline(random[\"cycles_per_load\"].iloc[0], linestyle=\"--\", linewidth=2,\n                   color=line.get_color(), alpha=0.7)\n\n    ax.set_xscale(\"log\", base=2)\n    # Label every other power of two: at this type size all eleven would collide.\n    strides = sorted(strided[\"stride_bytes\"].unique())\n    ax.set_xticks([x for x in strides if round(math.log2(x)) % 2 == 0])\n    ax.xaxis.set_major_formatter(ScalarFormatter())\n    ax.xaxis.set_minor_formatter(NullFormatter())\n    ax.set_xlabel(\"stride (bytes)\", labelpad=10)\n    ax.set_ylabel(\"latency (cycles per load)\", labelpad=12)\n    ax.set_title(TITLE, fontweight=\"normal\")\n    ax.grid(True, which=\"major\", alpha=0.3)\n",
+            "errorStyle": "bars"
+          }
+        ],
+        "shareX": false,
+        "shareY": false,
+        "shareXMode": "none",
+        "shareYMode": "none",
+        "xgap": 0.2,
+        "ygap": 0.24,
+        "panelLabels": false,
+        "facetByGroup": false,
+        "legendPosition": "right",
+        "legendTitle": "",
+        "showLegend": true,
+        "shareLegend": true,
+        "facetGroupCols": [],
+        "facetAxis": "cols",
+        "facetCount": 2,
+        "groupBy": [],
+        "figureWidth": 0,
+        "figureHeight": 0,
+        "subplotWidth": 4,
+        "subplotHeight": 3.3,
+        "facetLabelFormat": "{column}={value}"
+      }
+    },
+    {
+      "version": 3,
+      "label": "Stride: DRAM",
+      "mode": "grid",
+      "rendererBackend": "matplotlib",
+      "single": {
+        "database": "data",
+        "sql": "SELECT stride_bytes, cycles_per_load\nFROM latency\nWHERE component = 'dram' AND buffer_kib = 1048576",
+        "plotType": "line",
+        "x": "stride_bytes",
+        "y": [
+          "cycles_per_load"
+        ],
+        "showLegend": true,
+        "transformScript": "# One point per stride: the median over the repetitions. stride_bytes = 0\n# is the run without --stride (random cycle), drawn as the reference line.\ndf = df.groupby('stride_bytes', as_index=False)['cycles_per_load'].median()",
+        "layoutScript": "# Redraws the figure like dgx-spark/latency/plot/plot_stride.py, in the house style\n# of plotstyle.py, so it matches the slide image.\nimport matplotlib as mpl\nHOUSE = {\n    \"font.size\": 18, \"axes.titlesize\": 18, \"axes.labelsize\": 18,\n    \"xtick.labelsize\": 16, \"ytick.labelsize\": 16, \"legend.fontsize\": 9,\n    \"legend.title_fontsize\": 12, \"figure.titlesize\": 20,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"axes.grid\": True, \"grid.alpha\": 0.3, \"lines.linewidth\": 2.2, \"lines.markersize\": 6,\n}\n\ndef start(fig, size):\n    \"\"\"Throw away the default rendering and start a clean figure in the house style.\"\"\"\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(*size)\n\nimport math\nfrom matplotlib.ticker import NullFormatter, ScalarFormatter\nTITLE = \"DRAM\"\n\ndef customize_matplotlib(fig, ax, config):\n    start(fig, (8, 5))\n    # These four go on one slide at a quarter of its width each, so the type\n    # is pushed above the house size.\n    mpl.rcParams.update({\"font.size\": 24, \"axes.titlesize\": 26, \"axes.labelsize\": 24,\n                         \"xtick.labelsize\": 22, \"ytick.labelsize\": 22})\n    ax = fig.add_subplot()\n\n    strided = df[df[\"stride_bytes\"] > 0].sort_values(\"stride_bytes\")\n    (line,) = ax.plot(strided[\"stride_bytes\"], strided[\"cycles_per_load\"],\n                      marker=\"o\", markersize=5, linewidth=2.8)\n    # The random cycle (the run without --stride) as a dashed reference line.\n    random = df[df[\"stride_bytes\"] == 0]\n    if not random.empty:\n        ax.axhline(random[\"cycles_per_load\"].iloc[0], linestyle=\"--\", linewidth=2,\n                   color=line.get_color(), alpha=0.7)\n\n    ax.set_xscale(\"log\", base=2)\n    # Label every other power of two: at this type size all eleven would collide.\n    strides = sorted(strided[\"stride_bytes\"].unique())\n    ax.set_xticks([x for x in strides if round(math.log2(x)) % 2 == 0])\n    ax.xaxis.set_major_formatter(ScalarFormatter())\n    ax.xaxis.set_minor_formatter(NullFormatter())\n    ax.set_xlabel(\"stride (bytes)\", labelpad=10)\n    ax.set_ylabel(\"latency (cycles per load)\", labelpad=12)\n    ax.set_title(TITLE, fontweight=\"normal\")\n    ax.grid(True, which=\"major\", alpha=0.3)\n",
+        "errorStyle": "bars"
+      },
+      "grid": {
+        "rows": 1,
+        "cols": 1,
+        "activePanelIndex": 0,
+        "panels": [
+          {
+            "database": "data",
+            "sql": "SELECT stride_bytes, cycles_per_load\nFROM latency\nWHERE component = 'dram' AND buffer_kib = 1048576",
+            "plotType": "line",
+            "x": "stride_bytes",
+            "y": [
+              "cycles_per_load"
+            ],
+            "showLegend": true,
+            "transformScript": "# One point per stride: the median over the repetitions. stride_bytes = 0\n# is the run without --stride (random cycle), drawn as the reference line.\ndf = df.groupby('stride_bytes', as_index=False)['cycles_per_load'].median()",
+            "layoutScript": "# Redraws the figure like dgx-spark/latency/plot/plot_stride.py, in the house style\n# of plotstyle.py, so it matches the slide image.\nimport matplotlib as mpl\nHOUSE = {\n    \"font.size\": 18, \"axes.titlesize\": 18, \"axes.labelsize\": 18,\n    \"xtick.labelsize\": 16, \"ytick.labelsize\": 16, \"legend.fontsize\": 9,\n    \"legend.title_fontsize\": 12, \"figure.titlesize\": 20,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"axes.grid\": True, \"grid.alpha\": 0.3, \"lines.linewidth\": 2.2, \"lines.markersize\": 6,\n}\n\ndef start(fig, size):\n    \"\"\"Throw away the default rendering and start a clean figure in the house style.\"\"\"\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(*size)\n\nimport math\nfrom matplotlib.ticker import NullFormatter, ScalarFormatter\nTITLE = \"DRAM\"\n\ndef customize_matplotlib(fig, ax, config):\n    start(fig, (8, 5))\n    # These four go on one slide at a quarter of its width each, so the type\n    # is pushed above the house size.\n    mpl.rcParams.update({\"font.size\": 24, \"axes.titlesize\": 26, \"axes.labelsize\": 24,\n                         \"xtick.labelsize\": 22, \"ytick.labelsize\": 22})\n    ax = fig.add_subplot()\n\n    strided = df[df[\"stride_bytes\"] > 0].sort_values(\"stride_bytes\")\n    (line,) = ax.plot(strided[\"stride_bytes\"], strided[\"cycles_per_load\"],\n                      marker=\"o\", markersize=5, linewidth=2.8)\n    # The random cycle (the run without --stride) as a dashed reference line.\n    random = df[df[\"stride_bytes\"] == 0]\n    if not random.empty:\n        ax.axhline(random[\"cycles_per_load\"].iloc[0], linestyle=\"--\", linewidth=2,\n                   color=line.get_color(), alpha=0.7)\n\n    ax.set_xscale(\"log\", base=2)\n    # Label every other power of two: at this type size all eleven would collide.\n    strides = sorted(strided[\"stride_bytes\"].unique())\n    ax.set_xticks([x for x in strides if round(math.log2(x)) % 2 == 0])\n    ax.xaxis.set_major_formatter(ScalarFormatter())\n    ax.xaxis.set_minor_formatter(NullFormatter())\n    ax.set_xlabel(\"stride (bytes)\", labelpad=10)\n    ax.set_ylabel(\"latency (cycles per load)\", labelpad=12)\n    ax.set_title(TITLE, fontweight=\"normal\")\n    ax.grid(True, which=\"major\", alpha=0.3)\n",
+            "errorStyle": "bars"
+          }
+        ],
+        "shareX": false,
+        "shareY": false,
+        "shareXMode": "none",
+        "shareYMode": "none",
+        "xgap": 0.2,
+        "ygap": 0.24,
+        "panelLabels": false,
+        "facetByGroup": false,
+        "legendPosition": "right",
+        "legendTitle": "",
+        "showLegend": true,
+        "shareLegend": true,
+        "facetGroupCols": [],
+        "facetAxis": "cols",
+        "facetCount": 2,
+        "groupBy": [],
+        "figureWidth": 0,
+        "figureHeight": 0,
+        "subplotWidth": 4,
+        "subplotHeight": 3.3,
+        "facetLabelFormat": "{column}={value}"
+      }
+    },
+    {
+      "version": 3,
+      "label": "DSMEM vs rank distance",
+      "mode": "grid",
+      "rendererBackend": "matplotlib",
+      "single": {
+        "database": "data",
+        "sql": "SELECT cluster_size, target AS distance, cycles_per_load\nFROM latency\nWHERE component = 'dsmem' AND stride_bytes = 0 AND reader = 0",
+        "plotType": "line",
+        "x": "distance",
+        "y": [
+          "cycles_per_load"
+        ],
+        "showLegend": true,
+        "transformScript": "# Rank 0 reading rank d, so the distance is the target rank (the SQL\n# renames it); distance 0 is rank 0's own shared memory.\n# One bar per (cluster size, distance): the median over the repetitions.\ndf = df.groupby(['cluster_size', 'distance'], as_index=False)['cycles_per_load'].median()",
+        "layoutScript": "# Redraws the figure like dgx-spark/latency/plot/plot_dsmem_distance.py, in the house style\n# of plotstyle.py, so it matches the slide image.\nimport matplotlib as mpl\nHOUSE = {\n    \"font.size\": 18, \"axes.titlesize\": 18, \"axes.labelsize\": 18,\n    \"xtick.labelsize\": 16, \"ytick.labelsize\": 16, \"legend.fontsize\": 9,\n    \"legend.title_fontsize\": 12, \"figure.titlesize\": 20,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"axes.grid\": True, \"grid.alpha\": 0.3, \"lines.linewidth\": 2.2, \"lines.markersize\": 6,\n}\n\ndef start(fig, size):\n    \"\"\"Throw away the default rendering and start a clean figure in the house style.\"\"\"\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(*size)\n\ndef customize_matplotlib(fig, ax, config):\n    start(fig, (17, 5.2))\n    sizes = sorted(df[\"cluster_size\"].unique())\n    cycles = {cs: df[df[\"cluster_size\"] == cs].sort_values(\"distance\")[\"cycles_per_load\"].tolist()\n              for cs in sizes}\n    axes = fig.subplots(1, len(sizes), sharey=True,\n                        gridspec_kw={\"width_ratios\": [len(cycles[s]) + 1 for s in sizes]})\n    # Let the panels breathe: a shared y-axis otherwise butts them together.\n    fig.get_layout_engine().set(wspace=0.07, w_pad=0.10)\n    local, remote = \"#9e9e9e\", \"#1f77b4\"\n    for ax, cs in zip(axes, sizes):\n        cy = cycles[cs]\n        colors = [local] + [remote] * (len(cy) - 1)   # distance 0 = rank 0's own memory\n        bars = ax.bar(range(len(cy)), cy, color=colors, width=0.75)\n        for b, v in zip(bars, cy):\n            ax.text(b.get_x() + b.get_width() / 2, v + 6, f\"{v:.0f}\",\n                    ha=\"center\", va=\"bottom\", fontsize=16)\n        ax.set_title(f\"cluster size {cs}\")\n        ax.set_xticks(range(len(cy)))\n        ax.set_xticklabels([str(d) for d in range(len(cy))])\n        ax.grid(True, axis=\"y\", alpha=0.3)\n        ax.set_axisbelow(True)\n    axes[0].set_ylabel(\"latency (cycles per load)\")\n    axes[0].set_ylim(0, 260)\n    # One x-label for all panels instead of the same words four times.\n    fig.supxlabel(\"rank distance\")\n",
+        "errorStyle": "bars"
+      },
+      "grid": {
+        "rows": 1,
+        "cols": 1,
+        "activePanelIndex": 0,
+        "panels": [
+          {
+            "database": "data",
+            "sql": "SELECT cluster_size, target AS distance, cycles_per_load\nFROM latency\nWHERE component = 'dsmem' AND stride_bytes = 0 AND reader = 0",
+            "plotType": "line",
+            "x": "distance",
+            "y": [
+              "cycles_per_load"
+            ],
+            "showLegend": true,
+            "transformScript": "# Rank 0 reading rank d, so the distance is the target rank (the SQL\n# renames it); distance 0 is rank 0's own shared memory.\n# One bar per (cluster size, distance): the median over the repetitions.\ndf = df.groupby(['cluster_size', 'distance'], as_index=False)['cycles_per_load'].median()",
+            "layoutScript": "# Redraws the figure like dgx-spark/latency/plot/plot_dsmem_distance.py, in the house style\n# of plotstyle.py, so it matches the slide image.\nimport matplotlib as mpl\nHOUSE = {\n    \"font.size\": 18, \"axes.titlesize\": 18, \"axes.labelsize\": 18,\n    \"xtick.labelsize\": 16, \"ytick.labelsize\": 16, \"legend.fontsize\": 9,\n    \"legend.title_fontsize\": 12, \"figure.titlesize\": 20,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"axes.grid\": True, \"grid.alpha\": 0.3, \"lines.linewidth\": 2.2, \"lines.markersize\": 6,\n}\n\ndef start(fig, size):\n    \"\"\"Throw away the default rendering and start a clean figure in the house style.\"\"\"\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(*size)\n\ndef customize_matplotlib(fig, ax, config):\n    start(fig, (17, 5.2))\n    sizes = sorted(df[\"cluster_size\"].unique())\n    cycles = {cs: df[df[\"cluster_size\"] == cs].sort_values(\"distance\")[\"cycles_per_load\"].tolist()\n              for cs in sizes}\n    axes = fig.subplots(1, len(sizes), sharey=True,\n                        gridspec_kw={\"width_ratios\": [len(cycles[s]) + 1 for s in sizes]})\n    # Let the panels breathe: a shared y-axis otherwise butts them together.\n    fig.get_layout_engine().set(wspace=0.07, w_pad=0.10)\n    local, remote = \"#9e9e9e\", \"#1f77b4\"\n    for ax, cs in zip(axes, sizes):\n        cy = cycles[cs]\n        colors = [local] + [remote] * (len(cy) - 1)   # distance 0 = rank 0's own memory\n        bars = ax.bar(range(len(cy)), cy, color=colors, width=0.75)\n        for b, v in zip(bars, cy):\n            ax.text(b.get_x() + b.get_width() / 2, v + 6, f\"{v:.0f}\",\n                    ha=\"center\", va=\"bottom\", fontsize=16)\n        ax.set_title(f\"cluster size {cs}\")\n        ax.set_xticks(range(len(cy)))\n        ax.set_xticklabels([str(d) for d in range(len(cy))])\n        ax.grid(True, axis=\"y\", alpha=0.3)\n        ax.set_axisbelow(True)\n    axes[0].set_ylabel(\"latency (cycles per load)\")\n    axes[0].set_ylim(0, 260)\n    # One x-label for all panels instead of the same words four times.\n    fig.supxlabel(\"rank distance\")\n",
+            "errorStyle": "bars"
+          }
+        ],
+        "shareX": false,
+        "shareY": false,
+        "shareXMode": "none",
+        "shareYMode": "none",
+        "xgap": 0.2,
+        "ygap": 0.24,
+        "panelLabels": false,
+        "facetByGroup": false,
+        "legendPosition": "right",
+        "legendTitle": "",
+        "showLegend": true,
+        "shareLegend": true,
+        "facetGroupCols": [],
+        "facetAxis": "cols",
+        "facetCount": 2,
+        "groupBy": [],
+        "figureWidth": 0,
+        "figureHeight": 0,
+        "subplotWidth": 4,
+        "subplotHeight": 3.3,
+        "facetLabelFormat": "{column}={value}"
+      }
+    },
+    {
+      "version": 3,
+      "label": "DSMEM matrix",
+      "mode": "grid",
+      "rendererBackend": "matplotlib",
+      "single": {
+        "database": "data",
+        "sql": "SELECT reader, target, cycles_per_load\nFROM latency\nWHERE component = 'dsmem' AND cluster_size = 12 AND stride_bytes = 0",
+        "plotType": "heatmap",
+        "x": "target",
+        "y": [
+          "reader"
+        ],
+        "z": "cycles_per_load",
+        "showLegend": true,
+        "extra": {
+          "z": "cycles_per_load"
+        },
+        "transformScript": "# One cell per (reader, target): the median over the repetitions.\ndf = df.groupby(['reader', 'target'], as_index=False)['cycles_per_load'].median()",
+        "layoutScript": "# Redraws the figure like dgx-spark/latency/plot/plot_dsmem_matrix.py, in the house style\n# of plotstyle.py, so it matches the slide image.\nimport matplotlib as mpl\nHOUSE = {\n    \"font.size\": 18, \"axes.titlesize\": 18, \"axes.labelsize\": 18,\n    \"xtick.labelsize\": 16, \"ytick.labelsize\": 16, \"legend.fontsize\": 9,\n    \"legend.title_fontsize\": 12, \"figure.titlesize\": 20,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"axes.grid\": True, \"grid.alpha\": 0.3, \"lines.linewidth\": 2.2, \"lines.markersize\": 6,\n}\n\ndef start(fig, size):\n    \"\"\"Throw away the default rendering and start a clean figure in the house style.\"\"\"\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(*size)\n\nimport numpy as np\n\ndef customize_matplotlib(fig, ax, config):\n    start(fig, (8.5, 6.4))\n    ax = fig.add_subplot()\n\n    n = int(max(df[\"reader\"].max(), df[\"target\"].max())) + 1\n    matrix = np.full((n, n), np.nan)\n    for r, t, v in zip(df[\"reader\"], df[\"target\"], df[\"cycles_per_load\"]):\n        matrix[int(r), int(t)] = v\n    off = matrix.copy()\n    np.fill_diagonal(off, np.nan)            # the diagonal is a local access, not a hop\n\n    im = ax.imshow(off, cmap=\"viridis_r\", vmin=np.nanmin(off), vmax=np.nanmax(off))\n    for i in range(n):\n        for j in range(n):\n            if i == j:\n                ax.text(j, i, \"self\", ha=\"center\", va=\"center\", fontsize=8, color=\"0.4\")\n            else:\n                v = matrix[i, j]\n                ax.text(j, i, f\"{v:.0f}\", ha=\"center\", va=\"center\", fontsize=9,\n                        color=\"white\" if v > 185 else \"black\")\n    ax.set_xticks(range(n)); ax.set_xticklabels(range(n), fontsize=13)\n    ax.set_yticks(range(n)); ax.set_yticklabels(range(n), fontsize=13)\n    ax.set_xlabel(\"target rank\"); ax.set_ylabel(\"reader rank\")\n    ax.set_title(\"every pair, one reader at a time\")\n    ax.grid(False)\n    for s in ax.spines.values():\n        s.set_visible(False)\n    cb = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.03)\n    cb.set_label(\"cycles per load\", fontsize=15)\n    cb.ax.tick_params(labelsize=13)\n",
+        "errorStyle": "bars"
+      },
+      "grid": {
+        "rows": 1,
+        "cols": 1,
+        "activePanelIndex": 0,
+        "panels": [
+          {
+            "database": "data",
+            "sql": "SELECT reader, target, cycles_per_load\nFROM latency\nWHERE component = 'dsmem' AND cluster_size = 12 AND stride_bytes = 0",
+            "plotType": "heatmap",
+            "x": "target",
+            "y": [
+              "reader"
+            ],
+            "z": "cycles_per_load",
+            "showLegend": true,
+            "extra": {
+              "z": "cycles_per_load"
+            },
+            "transformScript": "# One cell per (reader, target): the median over the repetitions.\ndf = df.groupby(['reader', 'target'], as_index=False)['cycles_per_load'].median()",
+            "layoutScript": "# Redraws the figure like dgx-spark/latency/plot/plot_dsmem_matrix.py, in the house style\n# of plotstyle.py, so it matches the slide image.\nimport matplotlib as mpl\nHOUSE = {\n    \"font.size\": 18, \"axes.titlesize\": 18, \"axes.labelsize\": 18,\n    \"xtick.labelsize\": 16, \"ytick.labelsize\": 16, \"legend.fontsize\": 9,\n    \"legend.title_fontsize\": 12, \"figure.titlesize\": 20,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"axes.grid\": True, \"grid.alpha\": 0.3, \"lines.linewidth\": 2.2, \"lines.markersize\": 6,\n}\n\ndef start(fig, size):\n    \"\"\"Throw away the default rendering and start a clean figure in the house style.\"\"\"\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(*size)\n\nimport numpy as np\n\ndef customize_matplotlib(fig, ax, config):\n    start(fig, (8.5, 6.4))\n    ax = fig.add_subplot()\n\n    n = int(max(df[\"reader\"].max(), df[\"target\"].max())) + 1\n    matrix = np.full((n, n), np.nan)\n    for r, t, v in zip(df[\"reader\"], df[\"target\"], df[\"cycles_per_load\"]):\n        matrix[int(r), int(t)] = v\n    off = matrix.copy()\n    np.fill_diagonal(off, np.nan)            # the diagonal is a local access, not a hop\n\n    im = ax.imshow(off, cmap=\"viridis_r\", vmin=np.nanmin(off), vmax=np.nanmax(off))\n    for i in range(n):\n        for j in range(n):\n            if i == j:\n                ax.text(j, i, \"self\", ha=\"center\", va=\"center\", fontsize=8, color=\"0.4\")\n            else:\n                v = matrix[i, j]\n                ax.text(j, i, f\"{v:.0f}\", ha=\"center\", va=\"center\", fontsize=9,\n                        color=\"white\" if v > 185 else \"black\")\n    ax.set_xticks(range(n)); ax.set_xticklabels(range(n), fontsize=13)\n    ax.set_yticks(range(n)); ax.set_yticklabels(range(n), fontsize=13)\n    ax.set_xlabel(\"target rank\"); ax.set_ylabel(\"reader rank\")\n    ax.set_title(\"every pair, one reader at a time\")\n    ax.grid(False)\n    for s in ax.spines.values():\n        s.set_visible(False)\n    cb = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.03)\n    cb.set_label(\"cycles per load\", fontsize=15)\n    cb.ax.tick_params(labelsize=13)\n",
+            "errorStyle": "bars"
+          }
+        ],
+        "shareX": false,
+        "shareY": false,
+        "shareXMode": "none",
+        "shareYMode": "none",
+        "xgap": 0.2,
+        "ygap": 0.24,
+        "panelLabels": false,
+        "facetByGroup": false,
+        "legendPosition": "right",
+        "legendTitle": "",
+        "showLegend": true,
+        "shareLegend": true,
+        "facetGroupCols": [],
+        "facetAxis": "cols",
+        "facetCount": 2,
+        "groupBy": [],
+        "figureWidth": 0,
+        "figureHeight": 0,
+        "subplotWidth": 4,
+        "subplotHeight": 3.3,
+        "facetLabelFormat": "{column}={value}"
+      }
+    }
+  ],
+  "style": {
+    "dpi": 160
+  },
+  "script_paths": []
+}
