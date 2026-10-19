@@ -6,7 +6,7 @@
 // misses L2 and goes to DRAM.
 //
 // Build: make dram
-// Run:   ./dram [--buffer-bytes N (default 1073741824)]
+// Run:   ./dram [--buffer-kib N (default 1048576 = 1 GiB)]
 //               [--reps 101] [--steps 16384] [--seed 42] [--warmup 1]
 //
 // Note on --warmup: the untimed pass and the timed pass walk DIFFERENT
@@ -24,9 +24,9 @@ __global__ void gmem_chase(const unsigned* __restrict__ buf, unsigned start,
 int main(int argc, char** argv) {
     Args a;
     parse_args(argc, argv, &a, "dram",
-               "  --buffer-bytes N  chase buffer size                   (default 1073741824 = 1 GiB)\n");
-    if (a.buffer_bytes == 0) a.buffer_bytes = 1ull << 30;  // 1 GiB
-    size_t n = a.buffer_bytes / sizeof(unsigned);
+               "  --buffer-kib N    chase buffer size in KiB             (default 1048576 = 1 GiB)\n");
+    if (a.buffer_kib == 0) a.buffer_kib = 1ull << 20;  // 1 GiB
+    size_t n = a.buffer_kib * 1024 / sizeof(unsigned);   // elements in the buffer
 
     // A stride walk repeats after cycle_length elements. If the warm-up plus
     // the timed walk do not fit inside ONE cycle, the timed pass re-reads
@@ -37,9 +37,9 @@ int main(int argc, char** argv) {
     if (walk > cyc) {
         fprintf(stderr,
                 "dram: a walk of %zu loads would wrap a cycle of only %zu elements "
-                "(stride %d B over %zu B). Lower --steps/--warmup or raise "
-                "--buffer-bytes.\n",
-                walk, cyc, a.stride_bytes, a.buffer_bytes);
+                "(stride %d B over %zu KiB). Lower --steps/--warmup or raise "
+                "--buffer-kib.\n",
+                walk, cyc, a.stride_bytes, a.buffer_kib);
         return 1;
     }
     print_header(argc, argv, a, n);
@@ -66,7 +66,7 @@ int main(int argc, char** argv) {
         gmem_chase<<<1, 32>>>(dbuf, start(rng), a.warmup, a.steps, out);
         CUDA_CHECK(cudaGetLastError());
         CUDA_CHECK(cudaDeviceSynchronize());
-        print_row("dram", 0, 0, 0, 32, a.steps, a.buffer_bytes, a.stride_bytes,
+        print_row("dram", 0, 0, 32, a.steps, a.buffer_kib, a.stride_bytes,
                   a.seed, rep, *out);
         cpl.push_back((double)out->cycles / a.steps);
         npl.push_back((double)out->ns / a.steps);

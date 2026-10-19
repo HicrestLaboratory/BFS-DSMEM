@@ -48,7 +48,8 @@ def main():
     args = ap.parse_args()
 
     runs = load_runs()
-    runs["kib"] = runs["buffer_bytes"] / 1024
+    # logs before the rename have buffer_bytes (bytes); newer ones buffer_kib (KiB)
+    runs["kib"] = runs["buffer_kib"] if "buffer_kib" in runs else runs["buffer_bytes"] / 1024
     med = (runs.groupby("kib")["cycles_per_load"]
                .median().reset_index().sort_values("kib"))
 

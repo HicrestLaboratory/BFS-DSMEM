@@ -213,7 +213,7 @@ int main(int argc, char** argv) {
             if (out[i].cycles == 0) continue;       // rank 0 in broadcast: no data
             int rank = i / warps, warp = i % warps;
             int target = (int)smids[cs + i];
-            print_row(name, cs, (target - rank + cs) % cs, 1, a.block_size, a.steps,
+            print_row(name, cs, (target - rank + cs) % cs, a.block_size, a.steps,
                       0, a.stride_bytes, a.seed, rep, out[i], a.block_size, warp,
                       rank, target, (int)smids[rank], (int)smids[target]);
             sum_cpl += (double)out[i].cycles / a.steps;

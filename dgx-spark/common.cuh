@@ -18,6 +18,7 @@
 const int NUM_GPCs = 4;
 const int NUM_TPCs_PER_GPC = 6;
 const int NUM_SMs_PER_TPC = 2;
+const int MAX_ALLOWED_CLUSTERS = 12;
 
 #define CUDA_CHECK(call)                                                     \
     do {                                                                     \
@@ -149,8 +150,7 @@ struct Args {
     int block_size = 128;   // threads per block
     int cluster_size = 2;   // blocks per cluster
     int distance = 1;       // rank distance from rank 0 to the target block
-    int mapped = 1;         // 1 = go through map_shared_rank, 0 = direct pointer
-    size_t buffer_bytes = 0;  // 0 = "use the program's default"
+    size_t buffer_kib = 0;  // set by --buffer-kib (in KiB); 0 = "use the program's default"
     int stride_bytes = 0;   // 0 = random (Sattolo); > 0 = fixed stride in bytes
     // latency-many-threads.cu only:
     int pattern = 0;        // 0 = broadcast, 1 = ring, 2 = random (drawn per warp)
@@ -182,8 +182,8 @@ const char* COMMON_USAGE =
     "  --steps N         dependent loads per repetition       (default 16384)\n"
     "  --seed N          RNG seed for the permutation         (default 42)\n"
     "  --warmup N        untimed passes before the timed one  (default 1)\n"
-    "  --stride random|B access pattern: random cycle, or a fixed\n"
-    "                    stride of B bytes (multiple of 4)     (default random)\n";
+    "  --stride B        fixed stride of B bytes (multiple of 4);\n"
+    "                    without it the chase is a random cycle\n";
 
 // A plain loop over argv: `--flag value` pairs. Unknown flags are an error,
 // so a typo cannot silently run the wrong experiment.
@@ -207,9 +207,7 @@ void parse_args(int argc, char** argv, Args* a, const char* prog,
         else if (strcmp(f, "--block-size") == 0)    a->block_size = atoi(v);
         else if (strcmp(f, "--cluster-size") == 0)  a->cluster_size = atoi(v);
         else if (strcmp(f, "--distance") == 0)      a->distance = atoi(v);
-        else if (strcmp(f, "--mapped") == 0)        a->mapped = atoi(v);
-        else if (strcmp(f, "--buffer-bytes") == 0)  a->buffer_bytes = strtoull(v, nullptr, 10);
-        else if (strcmp(f, "--buffer-kib") == 0)    a->buffer_bytes = strtoull(v, nullptr, 10) * 1024;
+        else if (strcmp(f, "--buffer-kib") == 0)    a->buffer_kib = strtoull(v, nullptr, 10);
         else if (strcmp(f, "--chasers") == 0)       a->chasers = atoi(v);
         else if (strcmp(f, "--clusters") == 0)      a->clusters = atoi(v);
         else if (strcmp(f, "--gpc") == 0)           a->gpc = atoi(v);
@@ -245,14 +243,11 @@ void parse_args(int argc, char** argv, Args* a, const char* prog,
             else { fprintf(stderr, "%s: --pattern must be broadcast, ring or random\n", prog); exit(1); }
         }
         else if (strcmp(f, "--stride") == 0) {
-            if (strcmp(v, "random") == 0) a->stride_bytes = 0;
-            else {
-                a->stride_bytes = atoi(v);
-                if (a->stride_bytes <= 0 || a->stride_bytes % 4 != 0) {
-                    fprintf(stderr, "%s: --stride must be 'random' or a positive "
-                                    "multiple of 4 bytes\n", prog);
-                    exit(1);
-                }
+            a->stride_bytes = atoi(v);
+            if (a->stride_bytes <= 0 || a->stride_bytes % 4 != 0) {
+                fprintf(stderr, "%s: --stride must be a positive multiple of 4 bytes "
+                                "(omit it for a random cycle)\n", prog);
+                exit(1);
             }
         }
         else {
@@ -317,8 +312,8 @@ void print_header(int argc, char** argv, const Args& a, size_t n_elems,
     printf("# cycle_length: %zu\n", cycle_length(n_elems, a.stride_bytes));
     if (extra) fputs(extra, stdout);
     if (columns) { fputs(columns, stdout); return; }
-    printf("benchmark,cluster_size,distance,mapped,block_size,steps,"
-           "buffer_bytes,stride_bytes,seed,rep,cycles,ns,cycles_per_load,"
+    printf("benchmark,cluster_size,distance,block_size,steps,"
+           "buffer_kib,stride_bytes,seed,rep,cycles,ns,cycles_per_load,"
            "ns_per_load,ghz,chasers,warp,reader,target,smid_reader,smid_target\n");
 }
 
@@ -331,15 +326,15 @@ void print_header(int argc, char** argv, const Args& a, size_t n_elems,
 // the physical SMs they landed on. Programs that do not use them pass the
 // defaults, so every file keeps the same columns.
 void print_row(const char* benchmark, int cluster_size, int distance,
-               int mapped, int block_size, int steps, size_t buffer_bytes,
+               int block_size, int steps, size_t buffer_kib,
                int stride_bytes, int seed, int rep, const Result& r,
                int chasers = 1, int warp = 0, int reader = 0, int target = 0,
                int smid_reader = -1, int smid_target = -1) {
     double cpl = (double)r.cycles / steps;
     double npl = (double)r.ns / steps;
-    printf("%s,%d,%d,%d,%d,%d,%zu,%d,%d,%d,%lld,%llu,%.4f,%.4f,%.4f,%d,%d,%d,%d,%d,%d\n",
-           benchmark, cluster_size, distance, mapped, block_size, steps,
-           buffer_bytes, stride_bytes, seed, rep, r.cycles, r.ns, cpl, npl,
+    printf("%s,%d,%d,%d,%d,%zu,%d,%d,%d,%lld,%llu,%.4f,%.4f,%.4f,%d,%d,%d,%d,%d,%d\n",
+           benchmark, cluster_size, distance, block_size, steps,
+           buffer_kib, stride_bytes, seed, rep, r.cycles, r.ns, cpl, npl,
            cpl / npl, chasers, warp, reader, target, smid_reader, smid_target);
 }
 

@@ -44,8 +44,8 @@ make clean      # rm -rf build/
 Every program accepts `--reps`, `--steps`, `--seed`, `--warmup` and
 `--stride`; see `--help` for its own flags.
 
-`--stride` selects the access pattern. `random` (the default) is a Sattolo
-cycle; a byte count is a fixed stride, so `--stride 4` is the linear walk and
+`--stride` selects the access pattern. Without it the chase is a random
+Sattolo cycle; a byte count is a fixed stride, so `--stride 4` is the linear walk and
 `--stride 128` touches a new cache line every load. The pattern lives in the
 buffer *contents*: the kernel always runs the same `idx = buf[idx]` loop, so
 the only thing that differs between a random and a stride run is the address
@@ -62,7 +62,7 @@ All five programs emit the same CSV columns, so any set of logs can be
 loaded into one table:
 
 ```
-benchmark,cluster_size,distance,mapped,block_size,steps,buffer_bytes,
+benchmark,cluster_size,distance,block_size,steps,buffer_kib,
 stride_bytes,seed,rep,cycles,ns,cycles_per_load,ns_per_load,ghz
 ```
 
@@ -95,7 +95,7 @@ sbatchman status                                    # interactive TUI
 
 `experiments.yaml` sweeps `dsmem_remote` over cluster sizes 2/4/8/12 at every
 rank distance, `smem_cluster_local` over the same sizes × `mapped`, the three
-single-scenario programs once each, and then `--stride` from `random` through
+single-scenario programs once each, and then `--stride` from
 4 B to 4 KiB at one representative configuration per placement. Every job's output lands in
 `SbatchMan/experiments/<cluster>/local/<tag>/<timestamp>/{stdout.log,stderr.log,metadata.yaml}`.
 

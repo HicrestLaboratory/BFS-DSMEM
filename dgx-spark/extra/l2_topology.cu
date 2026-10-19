@@ -28,7 +28,7 @@
 // buffer.
 //
 // Build: make l2_topology      (or: nvcc -O3 -arch=sm_121 l2_topology.cu -o l2_topology)
-// Run:   ./l2_topology [--buffer-bytes N (default 6 MiB)] [--steps N] [--seed N]
+// Run:   ./l2_topology [--buffer-kib N (default 6144 = 6 MiB)] [--steps N] [--seed N]
 // Output: stdout = one CSV row per SM; stderr = the human-readable report.
 
 #include <cuda_runtime.h>
@@ -80,13 +80,13 @@ __global__ void warm_l2(const unsigned* buf, size_t n, unsigned long long* s) {
 int main(int argc, char** argv) {
     Args a;
     parse_args(argc, argv, &a, "l2_topology",
-               "  --buffer-bytes N  chase buffer size                   (default 6291456 = 6 MiB)\n");
-    if (a.buffer_bytes == 0) a.buffer_bytes = 6u << 20;
+               "  --buffer-kib N    chase buffer size in KiB             (default 6144 = 6 MiB)\n");
+    if (a.buffer_kib == 0) a.buffer_kib = 6 * 1024;   // 6 MiB
     int steps = a.steps;
 
     cudaDeviceProp prop;
     CUDA_CHECK(cudaGetDeviceProperties(&prop, 0));
-    size_t n = a.buffer_bytes / sizeof(unsigned);
+    size_t n = a.buffer_kib * 1024 / sizeof(unsigned);   // elements in the buffer
     int nsm = prop.multiProcessorCount;
 
     std::mt19937 rng(a.seed);
@@ -135,13 +135,13 @@ int main(int argc, char** argv) {
     };
 
     fprintf(stderr, "buffer %zu MiB (L2-resident, warmed), %d timed loads per SM\n",
-            a.buffer_bytes >> 20, steps);
+            a.buffer_kib / 1024, steps);
     fprintf(stderr, "start index %u, identical for every SM\n", shared_start);
     fprintf(stderr, "placement: %d blocks x %d B smem -> one block per SM\n\n",
             nsm, smemPerBlock);
 
     // ---------------- Part 1: every SM ----------------
-    printf("benchmark,smid,gpc,tpc,tpc_pos,buffer_bytes,steps,seed,p25,median,p75\n");
+    printf("benchmark,smid,gpc,tpc,tpc_pos,buffer_kib,steps,seed,p25,median,p75\n");
     std::vector<unsigned> med(nsm, 0);
     for (int sm = 0; sm < nsm; sm++) {
         std::vector<unsigned> v;
@@ -151,7 +151,7 @@ int main(int argc, char** argv) {
         int tpc = tpc_of(sm);
         printf("l2_topology,%d,%d,%d,%d,%zu,%d,%d,%u,%u,%u\n", sm, gpc_of_tpc(tpc), tpc,
                pos_of_tpc(tpc),
-               a.buffer_bytes, steps, a.seed, v[steps / 4], v[steps / 2], v[3 * steps / 4]);
+               a.buffer_kib, steps, a.seed, v[steps / 4], v[steps / 2], v[3 * steps / 4]);
     }
 
     // Header row: one column per TPC position inside a GPC.

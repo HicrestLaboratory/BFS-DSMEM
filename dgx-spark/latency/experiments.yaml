@@ -13,7 +13,6 @@ variables:
   reps: [101]
   steps: [16384]
 
-
 jobs:
   - config: local
     tag: smem
@@ -21,28 +20,29 @@ jobs:
 
   # L1 at several working-set sizes: flat while it fits (~88 KiB), then L2.
   - config: local
-    tag: "l1_buffer{buffer_kib}"
+    tag: l1_buffer_kib_{buffer_kib}
+    category: l1
     variables:
         buffer_kib: [1, 2, 4, 8, 16, 32, 64, 80, 88, 96, 112, 128]
-    command: "../../build/l1 --reps {reps} --steps {steps} --buffer-bytes {buffer_kib}"
+    command: "../../build/l1 --reps {reps} --steps {steps} --buffer-kib {buffer_kib}"
 
   # L2 at several working-set sizes: almost flat while it fits (~24 MiB), then DRAM.
   - config: local
-    tag: l2_buffer{buffer_kib}
+    tag: l2_buffer_kib_{buffer_kib}
     variables:
         buffer_kib: [192, 256, 384, 512, 768, 1024, 1536, 2048, 3072, 4096, 6144, 8192, 12288, 16384, 20480, 24576]
-    command: "../../build/l2 --reps {reps} --steps {steps} --buffer-bytes {buffer_kib}"
+    command: "../../build/l2 --reps {reps} --steps {steps} --buffer-kib {buffer_kib}"
   
   # DRAM at several working-set sizes
   - config: local
-    tag: dram_buffer{buffer_kib}
+    tag: dram_buffer_kib_{buffer_kib}
     variables:
         buffer_kib: [28672, 32768, 49152, 65536, 98304, 131072, 262144, 524288, 1048576, 2097152]
-    command: "../../build/dram --reps {reps} --steps {steps} --buffer-bytes {buffer_kib}"
+    command: "../../build/dram --reps {reps} --steps {steps} --buffer-kib {buffer_kib}"
 
   # All-to-all shared memory access for every cluster size.
   - config: local
-    tag: dsmem_cs{cluster_size}
+    tag: dsmem_cluster_size_{cluster_size}
     variables:
         reps: [21]
         cluster_size: [2, 4, 8, 12]
@@ -53,15 +53,15 @@ jobs:
   # is "does a predictable address stream help", not distance x pattern.
   - config: local
     variables:
-        stride: [random, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096]
+        stride: [4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096]
     config_jobs:
-      - tag: "smem_stride{stride}"
+      - tag: smem_stride_{stride}
         command: "../../build/smem --stride {stride} --reps {reps} --steps {steps}"
-      - tag: "dsmem_cs2_stride{stride}"
-        command: "../../build/dsmem_remote --cluster-size 2 --stride {stride} --reps {reps} --steps {steps}"
-      - tag: "l1_stride{stride}"
+      - tag: dsmem_cluster_size_2_stride_{stride}
+        command: "../../build/dsmem --cluster-size 2 --stride {stride} --reps {reps} --steps {steps}"
+      - tag: l1_stride_{stride}
         command: "../../build/l1 --stride {stride} --reps {reps} --steps {steps}"
-      - tag: "l2_stride{stride}"
+      - tag: l2_stride_{stride}
         command: "../../build/l2 --stride {stride} --reps {reps} --steps {steps}"
-      - tag: "dram_stride{stride}"
+      - tag: dram_stride_{stride}
         command: "../../build/dram --stride {stride} --reps {reps} --steps {steps}"

@@ -249,7 +249,7 @@ int main(int argc, char** argv) {
             const int rank = gb % cs, cl = gb / cs;
             const int target = (int)smids[blocks + i];  // rank inside the cluster
             const int tgb = cl * cs + target;
-            print_row(name, cs, (target - rank + cs) % cs, 1, a.block_size, a.steps, 0,
+            print_row(name, cs, (target - rank + cs) % cs, a.block_size, a.steps, 0,
                       a.stride_bytes, a.seed, rep, out[i], a.block_size, warp, gb, tgb,
                       (int)smids[gb], (int)smids[tgb]);
             first = std::min(first, span[2 * i]);

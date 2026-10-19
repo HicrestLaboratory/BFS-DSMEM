@@ -56,7 +56,7 @@ int main() {
     cudaDeviceProp prop;
     CUDA_CHECK(cudaGetDeviceProperties(&prop, 0));
     const int numSM = prop.multiProcessorCount;
-    const int clusterSize = 12;  // the largest this GPU accepts; see properties.cu
+    const int clusterSize = MAX_ALLOWED_CLUSTERS;
 
     // One block per SM: request more than half of the SM's shared memory so a
     // second block cannot fit alongside.

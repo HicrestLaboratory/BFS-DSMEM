@@ -19,7 +19,7 @@
 // under the name "l1". `chain` sweeps that boundary explicitly.
 //
 // Build: make l1
-// Run:   ./l1 [--buffer-bytes N (default 32768)]
+// Run:   ./l1 [--buffer-kib N (default 32)]
 //             [--reps 101] [--steps 16384] [--seed 42] [--warmup 1]
 
 #include "../common.cuh"
@@ -34,9 +34,9 @@ __global__ void gmem_chase(const unsigned* __restrict__ buf, unsigned start,
 int main(int argc, char** argv) {
     Args a;
     parse_args(argc, argv, &a, "l1",
-               "  --buffer-bytes N  chase buffer size                   (default 32768 = 32 KiB)\n");
-    if (a.buffer_bytes == 0) a.buffer_bytes = 32 * 1024;
-    size_t n = a.buffer_bytes / sizeof(unsigned);
+               "  --buffer-kib N    chase buffer size in KiB             (default 32)\n");
+    if (a.buffer_kib == 0) a.buffer_kib = 32;
+    size_t n = a.buffer_kib * 1024 / sizeof(unsigned);   // elements in the buffer
 
     // The in-kernel warm-up is the ONLY thing that puts the buffer in L1, so
     // it has to walk every element at least once before the timed pass. One
@@ -50,10 +50,10 @@ int main(int argc, char** argv) {
                 a.warmup, laps_needed, elems);
         a.warmup = laps_needed;
     }
-    if (a.buffer_bytes > 64 * 1024)
+    if (a.buffer_kib > 64)
         fprintf(stderr, "l1: warning: %zu KiB is close to or above the ~88 KiB effective L1; "
                         "the result may be L2 latency. Use ./chain to see the knee.\n",
-                a.buffer_bytes >> 10);
+                a.buffer_kib);
     print_header(argc, argv, a, n);
 
     std::mt19937 rng(a.seed);
@@ -81,7 +81,7 @@ int main(int argc, char** argv) {
         gmem_chase<<<1, 32>>>(dbuf, start(rng), a.warmup, a.steps, out);
         CUDA_CHECK(cudaGetLastError());
         CUDA_CHECK(cudaDeviceSynchronize());
-        print_row("l1", 0, 0, 0, 32, a.steps, a.buffer_bytes, a.stride_bytes,
+        print_row("l1", 0, 0, 32, a.steps, a.buffer_kib, a.stride_bytes,
                   a.seed, rep, *out);
         cpl.push_back((double)out->cycles / a.steps);
         npl.push_back((double)out->ns / a.steps);

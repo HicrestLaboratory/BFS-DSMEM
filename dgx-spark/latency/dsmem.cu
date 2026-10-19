@@ -63,6 +63,12 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // '#' metadata, then this program's own CSV columns: one row per
+    // (reader, target) pair and repetition.
+    print_header(argc, argv, a, SBUF, nullptr,
+                 "benchmark,cluster_size,reader,target,smid_reader,smid_target,block_size,"
+                 "steps,stride_bytes,seed,rep,cycles,ns,cycles_per_load,ns_per_load,ghz\n");
+
     std::mt19937 rng(a.seed);
     std::vector<unsigned> hperm(SBUF);
     make_pattern(hperm, rng, a.stride_bytes);
@@ -112,10 +118,11 @@ int main(int argc, char** argv) {
                     if (smid_of[k] < 0) smid_of[k] = (int)mine[k];
                     else if (smid_of[k] != (int)mine[k]) smid_changes++;
                 }
-                int dist = (target - reader + cs) % cs;
-                print_row("dsmem", cs, dist, 1, a.block_size, a.steps, 0,
-                          a.stride_bytes, a.seed, rep, *out, 1, 0,
-                          reader, target, sr, st);
+                const double cpl = (double)out->cycles / a.steps;   // cycles per load
+                const double npl = (double)out->ns / a.steps;       // ns per load
+                printf("dsmem,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%lld,%llu,%.4f,%.4f,%.4f\n",
+                       cs, reader, target, sr, st, a.block_size, a.steps, a.stride_bytes,
+                       a.seed, rep, out->cycles, out->ns, cpl, npl, cpl / npl);
                 v.push_back((double)out->cycles / a.steps);
             }
             std::sort(v.begin(), v.end());

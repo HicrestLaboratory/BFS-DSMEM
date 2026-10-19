@@ -46,7 +46,7 @@ int main(int argc, char** argv) {
         smem_chase<<<1, a.block_size>>>(dperm, a.warmup, a.steps, out);
         CUDA_CHECK(cudaGetLastError());
         CUDA_CHECK(cudaDeviceSynchronize());
-        print_row("smem", 0, 0, 0, a.block_size, a.steps, 0,
+        print_row("smem", 0, 0, a.block_size, a.steps, 0,
                   a.stride_bytes, a.seed, rep, *out);
         cpl.push_back((double)out->cycles / a.steps);
         npl.push_back((double)out->ns / a.steps);

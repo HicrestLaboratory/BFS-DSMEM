@@ -10,7 +10,7 @@
 // chase is warming it — see the note on lazy module loading in main().
 //
 // Build: make l2
-// Run:   ./l2 [--buffer-bytes N (default l2CacheSize/4)]
+// Run:   ./l2 [--buffer-kib N (default L2 size / 4)]
 //             [--reps 101] [--steps 16384] [--seed 42] [--warmup 1]
 
 #include "../common.cuh"
@@ -37,12 +37,12 @@ __global__ void warm_l2(const unsigned* __restrict__ buf, size_t n,
 int main(int argc, char** argv) {
     Args a;
     parse_args(argc, argv, &a, "l2",
-               "  --buffer-bytes N  chase buffer size                   (default l2CacheSize/4)\n");
+               "  --buffer-kib N    chase buffer size in KiB             (default L2 size / 4)\n");
 
     cudaDeviceProp prop;
     CUDA_CHECK(cudaGetDeviceProperties(&prop, 0));
-    if (a.buffer_bytes == 0) a.buffer_bytes = (size_t)prop.l2CacheSize / 4;
-    size_t n = a.buffer_bytes / sizeof(unsigned);
+    if (a.buffer_kib == 0) a.buffer_kib = (size_t)prop.l2CacheSize / 4 / 1024;
+    size_t n = a.buffer_kib * 1024 / sizeof(unsigned);   // elements in the buffer
     print_header(argc, argv, a, n);
 
     // With a large stride the walk repeats after cycle_length elements (see
@@ -86,7 +86,7 @@ int main(int argc, char** argv) {
         gmem_chase<<<1, 32>>>(dbuf, start(rng), a.warmup, a.steps, out);
         CUDA_CHECK(cudaGetLastError());
         CUDA_CHECK(cudaDeviceSynchronize());
-        print_row("l2", 0, 0, 0, 32, a.steps, a.buffer_bytes, a.stride_bytes,
+        print_row("l2", 0, 0, 32, a.steps, a.buffer_kib, a.stride_bytes,
                   a.seed, rep, *out);
         cpl.push_back((double)out->cycles / a.steps);
         npl.push_back((double)out->ns / a.steps);
