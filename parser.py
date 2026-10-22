@@ -58,7 +58,8 @@ an SM's own shared memory, one block per SM on every SM)
 
 Table `barrier` (dgx-spark/barriers/barrier.cu: the cost of one barrier)
   tag, barrier (syncthreads | cluster | cluster-relaxed | grid), block_size,
-  blocks, cluster_size, clusters (running at once), rounds, seed, rep
+  blocks, cluster_size, fill_gpu (0 = one cluster, 1 = as many as fit),
+  clusters (how many that was), rounds, seed, rep
   cycles, ns     all `rounds` barriers, timed by block 0
   cycles_per_barrier, ns_per_barrier
 
@@ -102,7 +103,8 @@ TABLES = {
     "bytes_per_block", "cycles", "ns", "bytes_per_cycle_per_sm", "gbps_per_sm", "gbps_chip",
   ]),
   "barrier": ("barrier", [
-    "barrier", "block_size", "blocks", "cluster_size", "clusters", "rounds", "seed", "rep",
+    "barrier", "block_size", "blocks", "cluster_size", "fill_gpu", "clusters", "rounds", "seed",
+    "rep",
     "cycles", "ns", "cycles_per_barrier", "ns_per_barrier",
   ]),
   "atomic": ("atomic", [
@@ -130,6 +132,10 @@ def _rows(job, runs, columns, first=None):
 
 
 def parse(job: sbm.Job):
+  # sbatchman visualize also passes the archived jobs: archiving a run is how
+  # it is retired (e.g. measured by an older version of a program), so skip them.
+  if job.archive_name:
+    return None
   if _status(job) != "COMPLETED":
     return None
   text = job.get_stdout()

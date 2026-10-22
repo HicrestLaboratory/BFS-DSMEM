@@ -50,7 +50,8 @@
 //   Why barriers and not one signal per message as in transfer.cu? A signal
 //   that announces data needs a "release", ~420 cycles on GB10, and each
 //   block would send p - 1 of them per exchange: ~4600 cycles for p = 12,
-//   while one cluster.sync() costs ~204 ns (~500 cycles) and orders everything.
+//   while one cluster.sync() costs ~161 ns (~390 cycles, barriers/barrier.cu)
+//   and orders everything.
 //
 // BUSY TIME
 //   Each block also records how long it spent in step 2, i.e. until it

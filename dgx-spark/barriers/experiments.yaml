@@ -21,15 +21,15 @@ jobs:
     command: "../../build/barrier --barrier syncthreads --block-size {block_size} --reps {reps}"
 
   # Cluster barrier, with release (cluster.sync()) and relaxed: the
-  # difference is the price of making the writes visible. One cluster alone,
-  # and as many as fit on the chip at once (--clusters 0).
+  # difference is the price of making the writes visible. One cluster alone
+  # (--fill-gpu 0), and as many as fit on the GPU at once (--fill-gpu 1).
   - config: local
-    tag: barrier_{barrier}_cluster_size_{cluster_size}_clusters_{clusters}
+    tag: barrier_{barrier}_cluster_size_{cluster_size}_fill_gpu_{fill_gpu}
     variables:
       barrier: [cluster, cluster-relaxed]
       cluster_size: [2, 4, 8, 12]
-      clusters: [1, 0]
-    command: "../../build/barrier --barrier {barrier} --cluster-size {cluster_size} --clusters {clusters} --reps {reps}"
+      fill_gpu: [0, 1]
+    command: "../../build/barrier --barrier {barrier} --cluster-size {cluster_size} --fill-gpu {fill_gpu} --reps {reps}"
 
   # Grid barrier (cooperative groups): from 1 block to two per SM.
   - config: local

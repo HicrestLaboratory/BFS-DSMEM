@@ -179,6 +179,7 @@ struct Args {
     int width = 16;                 // smem.cu: bytes per access, 4 | 8 | 16
     int counters = 1;               // atomic.cu: distinct addresses the threads share
     int blocks = 0;                 // barrier.cu --barrier grid: blocks, 0 = one per SM
+    int fill_gpu = 0;               // barrier.cu: 0 = one cluster, 1 = as many as fit at once
 };
 
 // transfer.cu: the ways to move bytes from one SM's shared memory to another's.
@@ -234,6 +235,13 @@ void parse_args(int argc, char** argv, Args* a, const char* prog,
         else if (strcmp(f, "--width") == 0)         a->width = atoi(v);
         else if (strcmp(f, "--counters") == 0)      a->counters = atoi(v);
         else if (strcmp(f, "--blocks") == 0)        a->blocks = atoi(v);
+        else if (strcmp(f, "--fill-gpu") == 0) {
+            a->fill_gpu = atoi(v);
+            if (strcmp(v, "0") != 0 && strcmp(v, "1") != 0) {
+                fprintf(stderr, "%s: --fill-gpu must be 0 (one cluster) or 1 (fill the GPU)\n", prog);
+                exit(1);
+            }
+        }
         else if (strcmp(f, "--method") == 0) {
             a->method = -1;
             for (int m = 0; m < N_TRANSFER_METHODS; m++)

@@ -27,8 +27,10 @@
 //   --warmup x --rounds untimed ones. Thread 0 of block 0 times them, so the
 //   result is the time from one barrier to the next when nobody has anything
 //   else to do: the bare cost.
-//   --clusters N runs N clusters at once (0 = as many as fit on the chip),
-//   each with its own barrier, to see whether they slow each other down.
+//   --fill-gpu 1 runs as many clusters as fit on the GPU at once, each with
+//   its own barrier (a cluster.sync() waits only for its own blocks), to see
+//   whether they slow each other down. The time is still cluster 0's,
+//   measured while all the others are synchronizing too.
 //
 // Build: make barrier
 // Run:   build/barrier --barrier cluster --cluster-size 12 --reps 11
@@ -87,8 +89,8 @@ int main(int argc, char** argv) {
                "  --rounds N        barriers per repetition               (default 1000)\n"
                "  --block-size N    threads per block                     (default 128)\n"
                "  --cluster-size N  cluster barriers: blocks per cluster, 2..12 (default 12)\n"
-               "  --clusters N      cluster barriers: clusters at once, 0 = fill the chip\n"
-               "                                                          (default 1)\n"
+               "  --fill-gpu 0|1    cluster barriers: 0 = one cluster, 1 = as many clusters\n"
+               "                    as fit on the GPU at once           (default 0)\n"
                "  --blocks N        grid: blocks, 0 = one per SM          (default 0)\n");
 
     // ---- check the arguments
@@ -134,15 +136,12 @@ int main(int argc, char** argv) {
         cfg.gridDim = dim3(cluster_size);
         cfg.attrs = &attr;
         cfg.numAttrs = 1;
-        int fit = 0;   // clusters of this shape that can be resident at once
+        // Filling the GPU means exactly as many clusters as can be resident at
+        // once: any more would run in a second wave, after the first ones have
+        // finished, not at the same time.
+        int fit = 0;
         CUDA_CHECK(cudaOccupancyMaxActiveClusters(&fit, (const void*)kernel, &cfg));
-        clusters = a.clusters == 0 ? fit : a.clusters;
-        if (clusters < 1 || clusters > fit) {
-            // Clusters that do not fit would run in a second wave, after the
-            // first ones have finished: they would not be running "at once".
-            fprintf(stderr, "barrier: --clusters must be 1..%d (what fits at once)\n", fit);
-            return 1;
-        }
+        clusters = a.fill_gpu ? fit : 1;
         blocks = clusters * cluster_size;
     } else if (which == GRID) {
         // grid.sync() deadlocks unless every block is resident at once: a
@@ -155,21 +154,24 @@ int main(int argc, char** argv) {
     }
     cfg.gridDim = dim3(blocks);
 
+    // fill_gpu is what was asked; clusters is how many that turned out to be.
+    const int fill_gpu = clustered ? a.fill_gpu : 0;
     char extra[200];
-    snprintf(extra, sizeof extra, "# barrier: %s\n# blocks: %d\n# cluster_size: %d\n# clusters: %d\n",
-             BARRIER_NAME[which], blocks, cluster_size, clusters);
+    snprintf(extra, sizeof extra,
+             "# barrier: %s\n# blocks: %d\n# cluster_size: %d\n# fill_gpu: %d\n# clusters: %d\n",
+             BARRIER_NAME[which], blocks, cluster_size, fill_gpu, clusters);
     print_header(argc, argv, a, 0, extra,
-                 "benchmark,barrier,block_size,blocks,cluster_size,clusters,rounds,seed,rep,"
-                 "cycles,ns,cycles_per_barrier,ns_per_barrier\n");
+                 "benchmark,barrier,block_size,blocks,cluster_size,fill_gpu,clusters,rounds,seed,"
+                 "rep,cycles,ns,cycles_per_barrier,ns_per_barrier\n");
 
     std::vector<double> cycles, ns;
     for (int rep = 0; rep < a.reps; rep++) {
         CUDA_CHECK(cudaLaunchKernelEx(&cfg, kernel, a.rounds, a.warmup * a.rounds, out));
         CUDA_CHECK(cudaDeviceSynchronize());
         const double cy = (double)out->cycles / a.rounds, t = (double)out->ns / a.rounds;
-        printf("barrier,%s,%d,%d,%d,%d,%d,%d,%d,%lld,%llu,%.2f,%.2f\n", BARRIER_NAME[which],
-               a.block_size, blocks, cluster_size, clusters, a.rounds, a.seed, rep, out->cycles,
-               out->ns, cy, t);
+        printf("barrier,%s,%d,%d,%d,%d,%d,%d,%d,%d,%lld,%llu,%.2f,%.2f\n", BARRIER_NAME[which],
+               a.block_size, blocks, cluster_size, fill_gpu, clusters, a.rounds, a.seed, rep,
+               out->cycles, out->ns, cy, t);
         cycles.push_back(cy);
         ns.push_back(t);
     }
