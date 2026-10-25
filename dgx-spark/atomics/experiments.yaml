@@ -1,8 +1,7 @@
-# SbatchMan batch definition: the cost of atomics (atomic.cu).
+# SbatchMan batch definition: atomicOr / atomicAdd / atomicCAS (atomic.cu).
 #
 # Run from THIS directory (the job's working directory is where you launch):
 #     sbatchman launch -f experiments.yaml
-#     sbatchman launch -f experiments.yaml -t 'atomic_dsmem*'   # only some jobs
 #
 # SbatchMan takes the cartesian product of the `variables` used by a command
 # and substitutes {name}. Tags become directory names under
@@ -11,35 +10,35 @@
 
 variables:
   reps: [21]
+  op: [or, add, cas]
 
 jobs:
   # Latency: one thread, a chain of dependent atomics.
   - config: local
-    tag: atomic_{memory}_latency
+    tag: atomic_latency_{op}_{memory}
     variables:
       memory: [smem, global]
-    command: "../../build/atomic --memory {memory} --mode latency --reps {reps}"
-  # DSMEM latency from rank 0 to every other rank of a 12-block cluster: does
-  # the distance matter, as it does for loads?
+    command: "../../build/atomic --mode latency --op {op} --memory {memory} --reps {reps}"
+  # DSMEM latency from rank 0 to every other rank of the cluster.
   - config: local
-    tag: atomic_dsmem_latency_distance_{distance}
+    tag: atomic_latency_{op}_dsmem_distance_{distance}
     variables:
       distance: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
-    command: "../../build/atomic --memory dsmem --mode latency --distance {distance} --reps {reps}"
+    command: "../../build/atomic --mode latency --op {op} --memory dsmem --distance {distance} --reps {reps}"
 
-  # Throughput under contention: from every thread on one counter
-  # (--counters 1) to every thread on its own (--counters 4096), with and
-  # without using the result, in one cluster and on the whole chip.
+  # Throughput under contention: 8 workers x 512 threads, --contention x
+  # threads on each word (1 = nobody collides ... 4096 = everybody on one
+  # word), the words consecutive or scattered over a 16 KiB buffer. In smem
+  # each worker uses its own buffer, so at most 512 threads can share a word.
   - config: local
     variables:
-      op: [add, fetch-add]
-      counters: [1, 4, 32, 128, 1024, 4096]
-      clusters: [1, 0]
+      layout: [consecutive, scattered]
     config_jobs:
-      - tag: atomic_{memory}_throughput_{op}_counters_{counters}_clusters_{clusters}
-        variables: {memory: [smem, global]}
-        command: "../../build/atomic --memory {memory} --mode throughput --op {op} --counters {counters} --clusters {clusters} --reps {reps}"
-      # DSMEM: everybody on one owner (broadcast) or one owner each (ring).
-      - tag: atomic_dsmem_throughput_{op}_counters_{counters}_clusters_{clusters}_{pattern}
-        variables: {pattern: [broadcast, ring]}
-        command: "../../build/atomic --memory dsmem --mode throughput --op {op} --counters {counters} --clusters {clusters} --pattern {pattern} --reps {reps}"
+      - tag: atomic_throughput_{op}_{layout}_smem_contention_{contention}
+        variables: {contention: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]}
+        command: "../../build/atomic --mode throughput --op {op} --layout {layout} --memory smem --contention {contention} --reps {reps}"
+      - tag: atomic_throughput_{op}_{layout}_{memory}_contention_{contention}
+        variables:
+          memory: [dsmem-rank0, dsmem-rank10, dsmem-rank10-spread, global]
+          contention: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096]
+        command: "../../build/atomic --mode throughput --op {op} --layout {layout} --memory {memory} --contention {contention} --reps {reps}"

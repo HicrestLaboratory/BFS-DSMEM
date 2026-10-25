@@ -37,10 +37,11 @@ __device__ __forceinline__ unsigned smid() {
     return s;
 }
 
-// Size of the shared-memory chase buffer, in 4-byte elements (32 KiB).
-// Small enough that any block can allocate it statically; large enough that
-// a chase over it is not a handful of addresses.
-constexpr int SBUF = 8192;
+// Size of the shared-memory buffer every benchmark uses, in 4-byte elements
+// (16 KiB): the latency chases, cluster*.cu and atomic.cu. Small enough that
+// any block can allocate it statically; large enough that a chase over it is
+// not a handful of addresses.
+constexpr int SBUF = 4096;
 
 // One measurement, written by the kernel into managed memory.
 struct Result {
@@ -175,11 +176,11 @@ struct Args {
     // checks the values of the flags it uses.
     const char* op = nullptr;       // smem.cu: read | write;  atomic.cu: add | fetch-add
     const char* barrier = nullptr;  // barrier.cu: syncthreads | cluster | cluster-relaxed | grid
-    const char* memory = nullptr;   // atomic.cu: smem | dsmem | global
+    const char* memory = nullptr;   // atomic.cu: where the atomics go (see atomic.cu)
     int width = 16;                 // smem.cu: bytes per access, 4 | 8 | 16
-    int counters = 1;               // atomic.cu: distinct addresses the threads share
+    int contention = 1;             // atomic.cu: threads that hit the same word
+    const char* layout = nullptr;   // atomic.cu: scattered | consecutive words
     int blocks = 0;                 // barrier.cu --barrier grid: blocks, 0 = one per SM
-    int fill_gpu = 0;               // barrier.cu: 0 = one cluster, 1 = as many as fit at once
 };
 
 // transfer.cu: the ways to move bytes from one SM's shared memory to another's.
@@ -233,15 +234,9 @@ void parse_args(int argc, char** argv, Args* a, const char* prog,
         else if (strcmp(f, "--barrier") == 0)       a->barrier = v;
         else if (strcmp(f, "--memory") == 0)        a->memory = v;
         else if (strcmp(f, "--width") == 0)         a->width = atoi(v);
-        else if (strcmp(f, "--counters") == 0)      a->counters = atoi(v);
+        else if (strcmp(f, "--contention") == 0)    a->contention = atoi(v);
+        else if (strcmp(f, "--layout") == 0)        a->layout = v;
         else if (strcmp(f, "--blocks") == 0)        a->blocks = atoi(v);
-        else if (strcmp(f, "--fill-gpu") == 0) {
-            a->fill_gpu = atoi(v);
-            if (strcmp(v, "0") != 0 && strcmp(v, "1") != 0) {
-                fprintf(stderr, "%s: --fill-gpu must be 0 (one cluster) or 1 (fill the GPU)\n", prog);
-                exit(1);
-            }
-        }
         else if (strcmp(f, "--method") == 0) {
             a->method = -1;
             for (int m = 0; m < N_TRANSFER_METHODS; m++)

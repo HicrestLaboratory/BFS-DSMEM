@@ -11,7 +11,7 @@
 //
 // Three things differ from dsmem_many_threads.cu:
 //
-//   ONE BLOCK PER SM. With a 32 KiB buffer, two or three blocks fit on one SM,
+//   ONE BLOCK PER SM. With a 16 KiB buffer, several blocks fit on one SM,
 //   and the scheduler may stack them, leaving SMs idle while the output
 //   claims 48 of them busy. Every block therefore also requests enough unused
 //   dynamic shared memory to take more than half an SM (the same trick as

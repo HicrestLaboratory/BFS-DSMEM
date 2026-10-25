@@ -57,17 +57,18 @@ an SM's own shared memory, one block per SM on every SM)
   gbps_chip      all blocks' bytes over the slowest block's time.
 
 Table `barrier` (dgx-spark/barriers/barrier.cu: the cost of one barrier)
+  One row per BARRIER, not per repetition: the program times each one.
   tag, barrier (syncthreads | cluster | cluster-relaxed | grid), block_size,
-  blocks, cluster_size, fill_gpu (0 = one cluster, 1 = as many as fit),
-  clusters (how many that was), rounds, seed, rep
-  cycles, ns     all `rounds` barriers, timed by block 0
-  cycles_per_barrier, ns_per_barrier
+  blocks, cluster_size, rounds (barriers per repetition), seed, rep,
+  round (which barrier of the repetition)
+  cycles         that one barrier, timed by thread 0 of block 0
 
-Table `atomic` (dgx-spark/atomics/atomic.cu: the cost of atomics)
-  tag, memory (smem | dsmem | global), mode (latency | throughput),
-  op (add | fetch-add; latency is always fetch-add), counters (distinct
-  addresses), pattern (dsmem throughput: broadcast | ring), distance (dsmem
-  latency: target rank), block_size, cluster_size, clusters, steps, seed, rep
+Table `atomic` (dgx-spark/atomics/atomic.cu: atomicOr / atomicAdd / atomicCAS)
+  tag, memory (throughput: smem | dsmem-rank0 | dsmem-rank10 |
+  dsmem-rank10-spread | global; latency: smem | dsmem | global),
+  mode (latency | throughput), op (or | add | cas), contention (threads
+  per word), layout (consecutive | scattered; "-" for latency), distance
+  (dsmem latency: target rank), block_size, workers, steps, seed, rep
   atomics        how many were done in total
   ns, cycles     latency: the chain; throughput: first start to last end
   ns_per_atomic, cycles_per_atomic (latency only), gatomics_per_s
@@ -103,13 +104,12 @@ TABLES = {
     "bytes_per_block", "cycles", "ns", "bytes_per_cycle_per_sm", "gbps_per_sm", "gbps_chip",
   ]),
   "barrier": ("barrier", [
-    "barrier", "block_size", "blocks", "cluster_size", "fill_gpu", "clusters", "rounds", "seed",
-    "rep",
-    "cycles", "ns", "cycles_per_barrier", "ns_per_barrier",
+    "barrier", "block_size", "blocks", "cluster_size", "rounds", "seed", "rep", "round",
+    "cycles",
   ]),
   "atomic": ("atomic", [
-    "memory", "mode", "op", "counters", "pattern", "distance",
-    "block_size", "cluster_size", "clusters", "steps", "seed", "rep",
+    "memory", "mode", "op", "contention", "layout", "distance",
+    "block_size", "workers", "steps", "seed", "rep",
     "atomics", "ns", "cycles", "ns_per_atomic", "cycles_per_atomic", "gatomics_per_s",
   ]),
 }

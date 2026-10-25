@@ -9,7 +9,7 @@
       "rendererBackend": "matplotlib",
       "single": {
         "database": "data",
-        "sql": "SELECT distribution, method, avg_msgsize, ns_per_exchange\nFROM a2av",
+        "sql": "SELECT distribution, method, avg_msgsize, ns_per_exchange\nFROM a2av\nWHERE distribution IN ('UNIMODALFLAT', 'UNIMODALPEAK', 'MONOTONEDECAY', 'HEAVYTAIL')",
         "plotType": "line",
         "x": "avg_msgsize",
         "y": [
@@ -25,7 +25,7 @@
         "panels": [
           {
             "database": "data",
-            "sql": "SELECT distribution, method, avg_msgsize, ns_per_exchange\nFROM a2av",
+            "sql": "SELECT distribution, method, avg_msgsize, ns_per_exchange\nFROM a2av\nWHERE distribution IN ('UNIMODALFLAT', 'UNIMODALPEAK', 'MONOTONEDECAY', 'HEAVYTAIL')",
             "plotType": "line",
             "x": "avg_msgsize",
             "y": [
@@ -44,7 +44,7 @@
       "rendererBackend": "matplotlib",
       "single": {
         "database": "data",
-        "sql": "SELECT distribution, method, avg_msgsize, ns_per_exchange AS slowdown\nFROM a2av\nWHERE method != 'cluster-sync'",
+        "sql": "SELECT distribution, method, avg_msgsize, ns_per_exchange AS slowdown\nFROM a2av\nWHERE method != 'cluster-sync' AND distribution IN ('UNIMODALFLAT', 'UNIMODALPEAK', 'MONOTONEDECAY', 'HEAVYTAIL')",
         "plotType": "line",
         "x": "avg_msgsize",
         "y": [
@@ -60,7 +60,7 @@
         "panels": [
           {
             "database": "data",
-            "sql": "SELECT distribution, method, avg_msgsize, ns_per_exchange AS slowdown\nFROM a2av\nWHERE method != 'cluster-sync'",
+            "sql": "SELECT distribution, method, avg_msgsize, ns_per_exchange AS slowdown\nFROM a2av\nWHERE method != 'cluster-sync' AND distribution IN ('UNIMODALFLAT', 'UNIMODALPEAK', 'MONOTONEDECAY', 'HEAVYTAIL')",
             "plotType": "line",
             "x": "avg_msgsize",
             "y": [
@@ -79,7 +79,7 @@
       "rendererBackend": "matplotlib",
       "single": {
         "database": "data",
-        "sql": "SELECT distribution, method, avg_msgsize, busy_max_ns AS busy_ratio, busy_mean_ns\nFROM a2av\nWHERE method != 'cluster-sync'",
+        "sql": "SELECT distribution, method, avg_msgsize, busy_max_ns AS busy_ratio, busy_mean_ns\nFROM a2av\nWHERE method != 'cluster-sync' AND distribution IN ('UNIMODALFLAT', 'UNIMODALPEAK', 'MONOTONEDECAY', 'HEAVYTAIL')",
         "plotType": "line",
         "x": "avg_msgsize",
         "y": [
@@ -95,7 +95,7 @@
         "panels": [
           {
             "database": "data",
-            "sql": "SELECT distribution, method, avg_msgsize, busy_max_ns AS busy_ratio, busy_mean_ns\nFROM a2av\nWHERE method != 'cluster-sync'",
+            "sql": "SELECT distribution, method, avg_msgsize, busy_max_ns AS busy_ratio, busy_mean_ns\nFROM a2av\nWHERE method != 'cluster-sync' AND distribution IN ('UNIMODALFLAT', 'UNIMODALPEAK', 'MONOTONEDECAY', 'HEAVYTAIL')",
             "plotType": "line",
             "x": "avg_msgsize",
             "y": [
@@ -103,6 +103,41 @@
             ],
             "transformScript": "# Per repetition: time the busiest block spent moving bytes / the mean\n# over the blocks (1 = perfectly balanced work); then the median.\ndf['busy_ratio'] = df['busy_ratio'] / df['busy_mean_ns']\ndf = df.groupby(['distribution', 'method', 'avg_msgsize'], as_index=False)['busy_ratio'].median()",
             "layoutScript": "# a2av.cu figure, in the house style of dgx-spark/latency/plot/plotstyle.py.\nimport matplotlib as mpl\nfrom matplotlib.ticker import FixedLocator, FormatStrFormatter, NullFormatter, NullLocator\nHOUSE = {\n    \"font.size\": 16, \"axes.titlesize\": 17, \"axes.labelsize\": 16,\n    \"xtick.labelsize\": 13, \"ytick.labelsize\": 13, \"legend.fontsize\": 13,\n    \"legend.title_fontsize\": 13, \"figure.titlesize\": 18,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"axes.grid\": True, \"grid.alpha\": 0.3, \"lines.linewidth\": 2.2, \"lines.markersize\": 6,\n}\n# DSMEM methods in blues/purple, global-memory methods in oranges/red.\nMETHODS = {\n    \"dsmem-push\": (\"#1f77b4\", \"o\"), \"dsmem-pull\": (\"#17becf\", \"o\"), \"dsmem-bulk\": (\"#9467bd\", \"o\"),\n    \"gmem-ldst\": (\"#ff7f0e\", \"s\"), \"gmem-tma\": (\"#d62728\", \"s\"),\n}\nDISTRIBUTIONS = [\"UNIMODALFLAT\", \"UNIMODALPEAK\", \"MONOTONEDECAY\", \"HEAVYTAIL\"]\n\n\ndef start(fig, size):\n    \"\"\"Throw away the default rendering and start a clean figure in the house style.\"\"\"\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(*size)\n\n\ndef message_size_axis(ax, sizes):\n    \"\"\"log2 x axis labelled with the message sizes that were run.\"\"\"\n    ax.set_xscale(\"log\", base=2)\n    ax.xaxis.set_major_locator(FixedLocator(sizes))\n    ax.xaxis.set_minor_locator(NullLocator())\n    ax.set_xticklabels([f\"{s}\" if s < 1024 else f\"{s // 1024} Ki\" for s in sizes])\n\n\ndef panels(fig, distributions, rows, cols):\n    \"\"\"One axes per distribution present in the data, sharing both axes.\"\"\"\n    axes = fig.subplots(rows, cols, sharex=True, sharey=True, squeeze=False).ravel()\n    for ax in axes[len(distributions):]:\n        ax.set_visible(False)\n    return list(zip(axes, distributions))\n\n\ndef one_legend(fig, axes):\n    \"\"\"A single legend above the panels instead of one per panel.\"\"\"\n    handles, labels = {}, {}\n    for ax in axes:\n        for h, l in zip(*ax.get_legend_handles_labels()):\n            handles.setdefault(l, h)\n    fig.legend(handles.values(), handles.keys(), loc=\"outside upper center\",\n               ncol=len(handles), frameon=False)\n\ndef customize_matplotlib(fig, ax, config):\n    start(fig, (14, 9.5))\n    present = [d for d in DISTRIBUTIONS if d in set(df[\"distribution\"])]\n    sizes = sorted(df[\"avg_msgsize\"].unique())\n    used = []\n    for ax, dist in panels(fig, present, 2, 2):\n        part = df[df[\"distribution\"] == dist]\n        for method, (color, marker) in METHODS.items():\n            line = part[part[\"method\"] == method].sort_values(\"avg_msgsize\")\n            ax.plot(line[\"avg_msgsize\"], line[\"busy_ratio\"], color=color, marker=marker, label=method)\n        ax.axhline(1, color=\"0.5\", linestyle=\"--\", linewidth=1.6)   # every block equally busy\n        ax.set_title(dist)\n        message_size_axis(ax, sizes)\n        used.append(ax)\n    fig.supxlabel(\"average message size (bytes)\")\n    fig.supylabel(\"busiest block / mean block (time moving bytes)\")\n    one_legend(fig, used)\n"
+          }
+        ]
+      }
+    },
+    {
+      "version": 3,
+      "label": "a2av: synthetic patterns",
+      "mode": "grid",
+      "rendererBackend": "matplotlib",
+      "single": {
+        "database": "data",
+        "sql": "SELECT distribution, method, avg_msgsize, gbps\nFROM a2av\nWHERE method != 'cluster-sync' AND distribution IN ('P2P', 'RING', 'BROADCAST')",
+        "plotType": "line",
+        "x": "avg_msgsize",
+        "y": [
+          "gbps"
+        ],
+        "transformScript": "# The traces of traces/make_synthetic_traces.py: every non-zero message\n# is avg_msgsize bytes. One point per (pattern, method, size): the\n# median GB/s over the repetitions (all the bytes / time per exchange,\n# the two cluster.sync() of each exchange included).\ndf = df.groupby(['distribution', 'method', 'avg_msgsize'], as_index=False)['gbps'].median()",
+        "layoutScript": "# a2av.cu figure, in the house style of dgx-spark/latency/plot/plotstyle.py.\nimport matplotlib as mpl\nfrom matplotlib.ticker import FixedLocator, FormatStrFormatter, NullFormatter, NullLocator\nHOUSE = {\n    \"font.size\": 16, \"axes.titlesize\": 17, \"axes.labelsize\": 16,\n    \"xtick.labelsize\": 13, \"ytick.labelsize\": 13, \"legend.fontsize\": 13,\n    \"legend.title_fontsize\": 13, \"figure.titlesize\": 18,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"axes.grid\": True, \"grid.alpha\": 0.3, \"lines.linewidth\": 2.2, \"lines.markersize\": 6,\n}\n# DSMEM methods in blues/purple, global-memory methods in oranges/red.\nMETHODS = {\n    \"dsmem-push\": (\"#1f77b4\", \"o\"), \"dsmem-pull\": (\"#17becf\", \"o\"), \"dsmem-bulk\": (\"#9467bd\", \"o\"),\n    \"gmem-ldst\": (\"#ff7f0e\", \"s\"), \"gmem-tma\": (\"#d62728\", \"s\"),\n}\nDISTRIBUTIONS = [\"UNIMODALFLAT\", \"UNIMODALPEAK\", \"MONOTONEDECAY\", \"HEAVYTAIL\"]\n\n\ndef start(fig, size):\n    \"\"\"Throw away the default rendering and start a clean figure in the house style.\"\"\"\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(*size)\n\n\ndef message_size_axis(ax, sizes):\n    \"\"\"log2 x axis labelled with the message sizes that were run.\"\"\"\n    ax.set_xscale(\"log\", base=2)\n    ax.xaxis.set_major_locator(FixedLocator(sizes))\n    ax.xaxis.set_minor_locator(NullLocator())\n    ax.set_xticklabels([f\"{s}\" if s < 1024 else f\"{s // 1024} Ki\" for s in sizes])\n\n\ndef panels(fig, distributions, rows, cols):\n    \"\"\"One axes per distribution present in the data, sharing both axes.\"\"\"\n    axes = fig.subplots(rows, cols, sharex=True, sharey=True, squeeze=False).ravel()\n    for ax in axes[len(distributions):]:\n        ax.set_visible(False)\n    return list(zip(axes, distributions))\n\n\ndef one_legend(fig, axes):\n    \"\"\"A single legend above the panels instead of one per panel.\"\"\"\n    handles, labels = {}, {}\n    for ax in axes:\n        for h, l in zip(*ax.get_legend_handles_labels()):\n            handles.setdefault(l, h)\n    fig.legend(handles.values(), handles.keys(), loc=\"outside upper center\",\n               ncol=len(handles), frameon=False)\n\nPATTERNS = [(\"P2P\", \"P2P: rank 0 -> rank 1\"),\n            (\"RING\", \"RING: rank k+1 -> rank k\"),\n            (\"BROADCAST\", \"BROADCAST: rank 0 -> all\")]\n\n\ndef customize_matplotlib(fig, ax, config):\n    start(fig, (17, 5.8))\n    present = [(p, title) for p, title in PATTERNS if p in set(df[\"distribution\"])]\n    axes = fig.subplots(1, len(present), sharey=True, squeeze=False)[0]\n    sizes = sorted(df[\"avg_msgsize\"].unique())\n    for axis, (pattern, title) in zip(axes, present):\n        part = df[df[\"distribution\"] == pattern]\n        for method, (color, marker) in METHODS.items():\n            line = part[part[\"method\"] == method].sort_values(\"avg_msgsize\")\n            axis.plot(line[\"avg_msgsize\"], line[\"gbps\"], color=color, marker=marker, label=method)\n        axis.set_title(title)\n        axis.set_yscale(\"log\")\n        axis.yaxis.set_major_formatter(FormatStrFormatter(\"%g\"))\n        message_size_axis(axis, sizes)\n        axis.tick_params(axis=\"x\", labelrotation=45)\n    fig.supxlabel(\"bytes per message\")\n    axes[0].set_ylabel(\"GB/s (all messages / time per exchange)\")\n    one_legend(fig, list(axes))\n"
+      },
+      "grid": {
+        "rows": 1,
+        "cols": 1,
+        "activePanelIndex": 0,
+        "panels": [
+          {
+            "database": "data",
+            "sql": "SELECT distribution, method, avg_msgsize, gbps\nFROM a2av\nWHERE method != 'cluster-sync' AND distribution IN ('P2P', 'RING', 'BROADCAST')",
+            "plotType": "line",
+            "x": "avg_msgsize",
+            "y": [
+              "gbps"
+            ],
+            "transformScript": "# The traces of traces/make_synthetic_traces.py: every non-zero message\n# is avg_msgsize bytes. One point per (pattern, method, size): the\n# median GB/s over the repetitions (all the bytes / time per exchange,\n# the two cluster.sync() of each exchange included).\ndf = df.groupby(['distribution', 'method', 'avg_msgsize'], as_index=False)['gbps'].median()",
+            "layoutScript": "# a2av.cu figure, in the house style of dgx-spark/latency/plot/plotstyle.py.\nimport matplotlib as mpl\nfrom matplotlib.ticker import FixedLocator, FormatStrFormatter, NullFormatter, NullLocator\nHOUSE = {\n    \"font.size\": 16, \"axes.titlesize\": 17, \"axes.labelsize\": 16,\n    \"xtick.labelsize\": 13, \"ytick.labelsize\": 13, \"legend.fontsize\": 13,\n    \"legend.title_fontsize\": 13, \"figure.titlesize\": 18,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"axes.grid\": True, \"grid.alpha\": 0.3, \"lines.linewidth\": 2.2, \"lines.markersize\": 6,\n}\n# DSMEM methods in blues/purple, global-memory methods in oranges/red.\nMETHODS = {\n    \"dsmem-push\": (\"#1f77b4\", \"o\"), \"dsmem-pull\": (\"#17becf\", \"o\"), \"dsmem-bulk\": (\"#9467bd\", \"o\"),\n    \"gmem-ldst\": (\"#ff7f0e\", \"s\"), \"gmem-tma\": (\"#d62728\", \"s\"),\n}\nDISTRIBUTIONS = [\"UNIMODALFLAT\", \"UNIMODALPEAK\", \"MONOTONEDECAY\", \"HEAVYTAIL\"]\n\n\ndef start(fig, size):\n    \"\"\"Throw away the default rendering and start a clean figure in the house style.\"\"\"\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(*size)\n\n\ndef message_size_axis(ax, sizes):\n    \"\"\"log2 x axis labelled with the message sizes that were run.\"\"\"\n    ax.set_xscale(\"log\", base=2)\n    ax.xaxis.set_major_locator(FixedLocator(sizes))\n    ax.xaxis.set_minor_locator(NullLocator())\n    ax.set_xticklabels([f\"{s}\" if s < 1024 else f\"{s // 1024} Ki\" for s in sizes])\n\n\ndef panels(fig, distributions, rows, cols):\n    \"\"\"One axes per distribution present in the data, sharing both axes.\"\"\"\n    axes = fig.subplots(rows, cols, sharex=True, sharey=True, squeeze=False).ravel()\n    for ax in axes[len(distributions):]:\n        ax.set_visible(False)\n    return list(zip(axes, distributions))\n\n\ndef one_legend(fig, axes):\n    \"\"\"A single legend above the panels instead of one per panel.\"\"\"\n    handles, labels = {}, {}\n    for ax in axes:\n        for h, l in zip(*ax.get_legend_handles_labels()):\n            handles.setdefault(l, h)\n    fig.legend(handles.values(), handles.keys(), loc=\"outside upper center\",\n               ncol=len(handles), frameon=False)\n\nPATTERNS = [(\"P2P\", \"P2P: rank 0 -> rank 1\"),\n            (\"RING\", \"RING: rank k+1 -> rank k\"),\n            (\"BROADCAST\", \"BROADCAST: rank 0 -> all\")]\n\n\ndef customize_matplotlib(fig, ax, config):\n    start(fig, (17, 5.8))\n    present = [(p, title) for p, title in PATTERNS if p in set(df[\"distribution\"])]\n    axes = fig.subplots(1, len(present), sharey=True, squeeze=False)[0]\n    sizes = sorted(df[\"avg_msgsize\"].unique())\n    for axis, (pattern, title) in zip(axes, present):\n        part = df[df[\"distribution\"] == pattern]\n        for method, (color, marker) in METHODS.items():\n            line = part[part[\"method\"] == method].sort_values(\"avg_msgsize\")\n            axis.plot(line[\"avg_msgsize\"], line[\"gbps\"], color=color, marker=marker, label=method)\n        axis.set_title(title)\n        axis.set_yscale(\"log\")\n        axis.yaxis.set_major_formatter(FormatStrFormatter(\"%g\"))\n        message_size_axis(axis, sizes)\n        axis.tick_params(axis=\"x\", labelrotation=45)\n    fig.supxlabel(\"bytes per message\")\n    axes[0].set_ylabel(\"GB/s (all messages / time per exchange)\")\n    one_legend(fig, list(axes))\n"
           }
         ]
       }

@@ -66,6 +66,24 @@ jobs:
       - tag: "a2av_{distribution}_avg_msgsize_{avg_msgsize}_{method}"
         variables: {distribution: [MONOTONEDECAY], avg_msgsize: [16, 32, 64, 128, 256, 512]}
 
+  # The simple, balanced patterns of transfer.cu and cluster.cu, replayed by
+  # the same program: traces/SYNTH_*_pairs.log, written by
+  # traces/make_synthetic_traces.py. Here avg_msgsize is the size of EACH
+  # non-zero message (one pair, a ring, or rank 0 to everyone).
+  # BROADCAST stops at 8 KiB: rank 0 sends 11 messages, which must fit in its
+  # shared memory.
+  - config: local
+    variables:
+      reps: [21]
+      block_size: [256]
+      method: [cluster-sync, dsmem-push, dsmem-pull, dsmem-bulk, gmem-ldst, gmem-tma]
+    command: "../../build/a2av --trace traces/SYNTH_{distribution}_pairs.log --avg-msgsize {avg_msgsize} --method {method} --block-size {block_size} --reps {reps}"
+    config_jobs:
+      - tag: "a2av_{distribution}_avg_msgsize_{avg_msgsize}_{method}"
+        variables: {distribution: [P2P, RING], avg_msgsize: [16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768]}
+      - tag: "a2av_{distribution}_avg_msgsize_{avg_msgsize}_{method}"
+        variables: {distribution: [BROADCAST], avg_msgsize: [16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]}
+
   # Bandwidth of an SM's own shared memory (smem_bandwidth.cu), one block per
   # SM on every SM: what DSMEM's ~10-17 GB/s per SM should be compared with.
   - config: local
