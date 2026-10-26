@@ -72,8 +72,8 @@
 //     the copy engine). GB/s counts only the bytes of the trace.
 //   - One cluster, so at most 12 ranks on GB10.
 //
-// Build: make a2av
-// Run:   build/a2av --trace ALL2ALLV_HEAVYTAIL_pairs.log --avg-msgsize 1024 --method dsmem-push
+// Build: make throughput
+// Run:   build/throughput --trace ALL2ALLV_HEAVYTAIL_pairs.log --avg-msgsize 1024 --method dsmem-push
 
 #include <cooperative_groups.h>
 
@@ -135,7 +135,8 @@ struct Params {
     int verify;            // 1 = fill and check every message (the correctness run)
     Layout layout;
     uint4* staging;        // gmem-*: one send area per rank, in global memory
-    unsigned long long* ns;        // the whole run, timed on rank 0
+    unsigned long long* ns;        // the whole run, timed on rank 0 ...
+    long long* cycles;             // ... in ns and in its SM's clock cycles
     unsigned long long* busy_ns;   // per rank: total time spent moving bytes
     unsigned* sm_of_rank;
     Errors* errors;
@@ -486,10 +487,11 @@ __global__ void __launch_bounds__(1024) a2av(Params params) {
 
     const int total_rounds = params.warmup_rounds + params.rounds;
     unsigned long long t0 = 0, busy = 0;
+    long long c0 = 0;
     for (int round = 0; round < total_rounds; round++) {
         const bool timed = round >= params.warmup_rounds;
         if (params.verify) fill_send_area(b, round);   // "produce" this round's messages
-        if (round == params.warmup_rounds) t0 = globaltimer();
+        if (round == params.warmup_rounds) { t0 = globaltimer(); c0 = clock64(); }
 
         cluster.sync();                     // 1. data ready, receive areas free
         const unsigned long long start = globaltimer();
@@ -501,10 +503,11 @@ __global__ void __launch_bounds__(1024) a2av(Params params) {
         if (params.verify) check_recv_area(b, round);   // "consume" them
     }
     const unsigned long long t1 = globaltimer();
+    const long long c1 = clock64();
 
     if (threadIdx.x == 0) {
         params.busy_ns[rank] = busy;
-        if (rank == 0) *params.ns = t1 - t0;
+        if (rank == 0) { *params.ns = t1 - t0; *params.cycles = c1 - c0; }
     }
     // A block's shared memory disappears when it exits: nobody leaves while
     // another block might still be reading it.
@@ -683,7 +686,8 @@ int main(int argc, char** argv) {
              total_bytes, max_sent, max_received, smem_bytes);
     print_header(argc, argv, a, 0, extra,
                  "benchmark,method,distribution,nranks,avg_msgsize,total_bytes,max_sent_bytes,"
-                 "max_received_bytes,block_size,rounds,seed,rep,ns,ns_per_exchange,gbps,"
+                 "max_received_bytes,block_size,rounds,seed,rep,ns,cycles,ns_per_exchange,"
+                 "cycles_per_exchange,gbps,"
                  "busy_max_ns,busy_mean_ns\n");
 
     // ---- memory the kernel needs
@@ -694,6 +698,7 @@ int main(int argc, char** argv) {
     CUDA_CHECK(cudaMalloc(&params.staging, staging_bytes));
     CUDA_CHECK(cudaMemset(params.staging, 0, staging_bytes));
     CUDA_CHECK(cudaMallocManaged(&params.ns, sizeof(unsigned long long)));
+    CUDA_CHECK(cudaMallocManaged(&params.cycles, sizeof(long long)));
     CUDA_CHECK(cudaMallocManaged(&params.busy_ns, p * sizeof(unsigned long long)));
     CUDA_CHECK(cudaMallocManaged(&params.sm_of_rank, p * sizeof(unsigned)));
     CUDA_CHECK(cudaMallocManaged(&params.errors, sizeof(Errors)));
@@ -749,10 +754,10 @@ int main(int argc, char** argv) {
             busy_max = std::max(busy_max, busy);
             busy_sum += busy;
         }
-        printf("a2av,%s,%s,%d,%zu,%lld,%lld,%lld,%d,%d,%d,%d,%llu,%.3f,%.4f,%.3f,%.3f\n",
+        printf("a2av,%s,%s,%d,%zu,%lld,%lld,%lld,%d,%d,%d,%d,%llu,%lld,%.3f,%.2f,%.4f,%.3f,%.3f\n",
                TRANSFER_METHOD[a.method], dist.c_str(), p, a.avg_msgsize, total_bytes, max_sent,
-               max_received, a.block_size, a.rounds, a.seed, rep, *params.ns, ns, g, busy_max,
-               busy_sum / p);
+               max_received, a.block_size, a.rounds, a.seed, rep, *params.ns, *params.cycles, ns,
+               (double)*params.cycles / a.rounds, g, busy_max, busy_sum / p);
         ns_per_exchange.push_back(ns);
         gbps.push_back(g);
         imbalance.push_back(busy_max / (busy_sum / p));
@@ -771,6 +776,7 @@ int main(int argc, char** argv) {
 
     CUDA_CHECK(cudaFree(params.staging));
     CUDA_CHECK(cudaFree(params.ns));
+    CUDA_CHECK(cudaFree(params.cycles));
     CUDA_CHECK(cudaFree(params.busy_ns));
     CUDA_CHECK(cudaFree(params.sm_of_rank));
     CUDA_CHECK(cudaFree(params.errors));

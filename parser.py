@@ -40,8 +40,8 @@ replayed among the blocks of one cluster)
                  bytes of one exchange in total, and of the block that sends
                  / receives the most.
   block_size, rounds, seed, rep
-  ns             whole repetition (`rounds` exchanges), in ns.
-  ns_per_exchange, gbps
+  ns, cycles     whole repetition (`rounds` exchanges), timed by rank 0.
+  ns_per_exchange, cycles_per_exchange, gbps
                  one exchange: time, and total_bytes / time.
   busy_max_ns, busy_mean_ns
                  time the blocks spent moving bytes in one exchange: the
@@ -97,7 +97,8 @@ TABLES = {
     "method", "distribution", "nranks", "avg_msgsize",
     "total_bytes", "max_sent_bytes", "max_received_bytes",
     "block_size", "rounds", "seed", "rep",
-    "ns", "ns_per_exchange", "gbps", "busy_max_ns", "busy_mean_ns",
+    "ns", "cycles", "ns_per_exchange", "cycles_per_exchange", "gbps",
+    "busy_max_ns", "busy_mean_ns",
   ]),
   "smem_bandwidth": ("smem_bandwidth", [
     "op", "width", "stride_bytes", "block_size", "blocks", "steps", "seed", "rep",

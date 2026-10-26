@@ -71,7 +71,7 @@ __global__ void barriers(int rounds, int warmup_rounds, unsigned* samples) {
         long long c0 = 0;
         if (timer) c0 = clock64();
         one_barrier<WHICH>();
-        if (timer) sample[r] = (unsigned)(clock64() - c0);
+        if (timer) sample[r] = (unsigned)(clock64() - c0); // da verificare con gli altri threads e con ncu
     }
     if (timer)
         for (int r = 0; r < rounds; r++) samples[r] = sample[r];

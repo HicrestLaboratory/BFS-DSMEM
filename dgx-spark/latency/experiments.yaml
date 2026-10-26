@@ -53,7 +53,7 @@ jobs:
   # is "does a predictable address stream help", not distance x pattern.
   - config: local
     variables:
-        stride: [4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096]
+        stride: [4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048]
     config_jobs:
       - tag: smem_stride_{stride}
         command: "../../build/smem --stride {stride} --reps {reps} --steps {steps}"
