@@ -56,12 +56,17 @@ an SM's own shared memory, one block per SM on every SM)
   bytes_per_cycle_per_sm, gbps_per_sm   the median block
   gbps_chip      all blocks' bytes over the slowest block's time.
 
-Table `barrier` (dgx-spark/barriers/barrier.cu: the cost of one barrier)
-  One row per BARRIER, not per repetition: the program times each one.
+Tables `barriers_naive` and `barriers_shared` (dgx-spark/barriers/barriers-naive.cu
+and barriers-shared.cu: how long each thread waits in ONE barrier)
   tag, barrier (syncthreads | cluster | cluster-relaxed | grid), block_size,
-  blocks, cluster_size, rounds (barriers per repetition), seed, rep,
-  round (which barrier of the repetition)
-  cycles         that one barrier, timed by thread 0 of block 0
+  blocks (cluster: the cluster size), seed, rep (the launch)
+  block, thread  which thread of the launch this row is
+  cycles         end - start around the barrier; in barriers_shared it also
+                 holds the shared-memory load after the barrier
+
+Table `barriers` (dgx-spark/barriers/barriers.cu: the kernels of
+barriers-naive.cu, thread 0 of each block only: the real cost)
+  tag, barrier, block_size, blocks, seed, rep, block, cycles
 
 Table `atomic` (dgx-spark/atomics/atomic.cu: atomicOr / atomicAdd / atomicCAS)
   tag, memory (throughput: smem | dsmem-rank0 | dsmem-rank10 |
@@ -104,9 +109,14 @@ TABLES = {
     "op", "width", "stride_bytes", "block_size", "blocks", "steps", "seed", "rep",
     "bytes_per_block", "cycles", "ns", "bytes_per_cycle_per_sm", "gbps_per_sm", "gbps_chip",
   ]),
-  "barrier": ("barrier", [
-    "barrier", "block_size", "blocks", "cluster_size", "rounds", "seed", "rep", "round",
-    "cycles",
+  "barriers-naive": ("barriers_naive", [
+    "barrier", "block_size", "blocks", "seed", "rep", "block", "thread", "cycles",
+  ]),
+  "barriers-shared": ("barriers_shared", [
+    "barrier", "block_size", "blocks", "seed", "rep", "block", "thread", "cycles",
+  ]),
+  "barriers": ("barriers", [
+    "barrier", "block_size", "blocks", "seed", "rep", "block", "cycles",
   ]),
   "atomic": ("atomic", [
     "memory", "mode", "op", "contention", "layout", "distance",

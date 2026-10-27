@@ -1,4 +1,5 @@
-# SbatchMan batch definition: the cost of one barrier (barrier.cu).
+# SbatchMan batch definition: how long one barrier takes (barriers-naive.cu,
+# barriers-shared.cu and barriers.cu).
 #
 # Run from THIS directory (the job's working directory is where you launch):
 #     sbatchman launch -f experiments.yaml
@@ -8,42 +9,35 @@
 # SbatchMan/experiments/<cluster>/<config>/<tag>/<timestamp>/, so each tag
 # carries the parameters that identify the job.
 #
-# Every job writes one CSV row per barrier: --reps launches x --rounds
-# barriers = 101 x 9 = 909 samples, for the box plots. Many launches with few
-# barriers each, so a box shows both how much one barrier varies and how
-# much the launches differ (with 1024 threads, launches fall into two groups
-# ~30 cycles apart). Not more samples: sbatchman visualize passes at most
-# 10000 rows to a plot (and cuts the rest silently), and the cluster and grid
-# tabs show 10 configurations each.
+# The three programs run the same sweep and time the same thing, end - start
+# around ONE barrier:
+#   barriers-naive   the paper's method, one CSV row per thread per launch;
+#   barriers-shared  + a shared-memory load after the barrier so the clock
+#                    read cannot run early, one row per thread per launch;
+#   barriers         the kernels of barriers-naive, but only thread 0 of each
+#                    block is printed: the real cost (warp 0 does the work of
+#                    the barrier, so its clock read is not early).
+# 5 launches: a naive or shared job with 12 blocks x 1024 threads is already
+# 61440 rows.
 
 variables:
-  reps: [101]
-  rounds: [9]
+  program: [barriers-naive, barriers-shared, barriers]
+  reps: [5]
+  block_size: [32, 64, 128, 256, 512, 1024]
 
 jobs:
-  # Block barrier: grows with the number of warps that must arrive.
+  # Block barrier: one block.
   - config: local
-    tag: barrier_syncthreads_block_size_{block_size}
+    tag: "{program}_{barrier}_blocks_1_block_size_{block_size}"
     variables:
-      block_size: [32, 64, 128, 256, 512, 1024]
-    command: "../../build/barrier --barrier syncthreads --block-size {block_size} --rounds {rounds} --reps {reps}"
+      barrier: [syncthreads]
+    command: "../../build/{program} --barrier {barrier} --blocks 1 --block-size {block_size} --reps {reps}"
 
-  # Cluster barrier, with release (cluster.sync()) and relaxed: the
-  # difference is the price of making the writes visible. One cluster of
-  # 1..12 blocks, with 1 thread per block (the barrier alone) and with 1024
-  # (every warp must arrive).
+  # Cluster barriers (one cluster of {blocks} blocks) and grid barrier
+  # (a cooperative launch of {blocks} blocks).
   - config: local
-    tag: barrier_{barrier}_cluster_size_{cluster_size}_block_size_{block_size}
+    tag: "{program}_{barrier}_blocks_{blocks}_block_size_{block_size}"
     variables:
-      barrier: [cluster, cluster-relaxed]
-      cluster_size: [1, 2, 4, 8, 12]
-      block_size: [1, 1024]
-    command: "../../build/barrier --barrier {barrier} --cluster-size {cluster_size} --block-size {block_size} --rounds {rounds} --reps {reps}"
-
-  # Grid barrier (cooperative groups), same block sizes.
-  - config: local
-    tag: barrier_grid_blocks_{blocks}_block_size_{block_size}
-    variables:
-      blocks: [1, 2, 4, 8, 12]
-      block_size: [1, 1024]
-    command: "../../build/barrier --barrier grid --blocks {blocks} --block-size {block_size} --rounds {rounds} --reps {reps}"
+      barrier: [cluster, cluster-relaxed, grid]
+      blocks: [2, 12]
+    command: "../../build/{program} --barrier {barrier} --blocks {blocks} --block-size {block_size} --reps {reps}"

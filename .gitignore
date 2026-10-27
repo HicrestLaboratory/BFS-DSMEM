@@ -7,6 +7,7 @@ __pycache__/
 SbatchMan/experiments/
 SbatchMan/archive
 dgx-spark/latency/plot
+dgx-spark/paper-benchmark
 book.md
 TODO.md
 dgx-spark/extra/histogram.cu

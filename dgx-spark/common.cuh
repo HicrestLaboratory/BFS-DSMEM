@@ -172,15 +172,15 @@ struct Args {
     // a2av.cu only:
     const char* trace = nullptr;  // axccl *_pairs.log with the pattern to replay
     size_t avg_msgsize = 0;       // which of its message sizes to replay
-    // throughput/smem.cu, barriers/barrier.cu, atomics/atomic.cu: each program
+    // throughput/smem.cu, barriers/barriers*.cu, atomics/atomic.cu: each program
     // checks the values of the flags it uses.
     const char* op = nullptr;       // smem.cu: read | write;  atomic.cu: add | fetch-add
-    const char* barrier = nullptr;  // barrier.cu: syncthreads | cluster | cluster-relaxed | grid
+    const char* barrier = nullptr;  // barriers*.cu: syncthreads | cluster | cluster-relaxed | grid
     const char* memory = nullptr;   // atomic.cu: where the atomics go (see atomic.cu)
     int width = 16;                 // smem.cu: bytes per access, 4 | 8 | 16
     int contention = 1;             // atomic.cu: threads that hit the same word
     const char* layout = nullptr;   // atomic.cu: scattered | consecutive words
-    int blocks = 0;                 // barrier.cu --barrier grid: blocks, 0 = one per SM
+    int blocks = 0;                 // barriers*.cu: blocks, 1..12
 };
 
 // transfer.cu: the ways to move bytes from one SM's shared memory to another's.
