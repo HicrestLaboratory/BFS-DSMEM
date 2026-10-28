@@ -179,7 +179,7 @@ struct Args {
     const char* memory = nullptr;   // atomic.cu: where the atomics go (see atomic.cu)
     int width = 16;                 // smem.cu: bytes per access, 4 | 8 | 16
     int contention = 1;             // atomic.cu: threads that hit the same word
-    const char* layout = nullptr;   // atomic.cu: scattered | consecutive words
+    const char* scope = nullptr;    // atomic.cu: intra | inter (-block contention)
     int blocks = 0;                 // barriers*.cu: blocks, 1..12
 };
 
@@ -235,7 +235,7 @@ void parse_args(int argc, char** argv, Args* a, const char* prog,
         else if (strcmp(f, "--memory") == 0)        a->memory = v;
         else if (strcmp(f, "--width") == 0)         a->width = atoi(v);
         else if (strcmp(f, "--contention") == 0)    a->contention = atoi(v);
-        else if (strcmp(f, "--layout") == 0)        a->layout = v;
+        else if (strcmp(f, "--scope") == 0)         a->scope = v;
         else if (strcmp(f, "--blocks") == 0)        a->blocks = atoi(v);
         else if (strcmp(f, "--method") == 0) {
             a->method = -1;

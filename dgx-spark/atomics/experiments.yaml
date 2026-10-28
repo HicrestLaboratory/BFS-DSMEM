@@ -27,18 +27,22 @@ jobs:
     command: "../../build/atomic --mode latency --op {op} --memory dsmem --distance {distance} --reps {reps}"
 
   # Throughput under contention: 8 workers x 512 threads, --contention x
-  # threads on each word (1 = nobody collides ... 4096 = everybody on one
-  # word), the words consecutive or scattered over a 16 KiB buffer. In smem
-  # each worker uses its own buffer, so at most 512 threads can share a word.
+  # threads on each word (1 = nobody collides). --scope says where the x
+  # threads are: intra = neighbours in ONE block (x <= 512), inter = spread
+  # over min(x, 8) blocks (x up to 4096 = everybody on one word). smem is the
+  # worker's own buffer, so only intra-block contention exists there.
   - config: local
-    variables:
-      layout: [consecutive, scattered]
     config_jobs:
-      - tag: atomic_throughput_{op}_{layout}_smem_contention_{contention}
+      - tag: atomic_throughput_{op}_intra_smem_contention_{contention}
         variables: {contention: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]}
-        command: "../../build/atomic --mode throughput --op {op} --layout {layout} --memory smem --contention {contention} --reps {reps}"
-      - tag: atomic_throughput_{op}_{layout}_{memory}_contention_{contention}
+        command: "../../build/atomic --mode throughput --op {op} --scope intra --memory smem --contention {contention} --reps {reps}"
+      - tag: atomic_throughput_{op}_intra_{memory}_contention_{contention}
         variables:
-          memory: [dsmem-rank0, dsmem-rank10, dsmem-rank10-spread, global]
+          memory: [dsmem-rank0, dsmem-rank10, global]
+          contention: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
+        command: "../../build/atomic --mode throughput --op {op} --scope intra --memory {memory} --contention {contention} --reps {reps}"
+      - tag: atomic_throughput_{op}_inter_{memory}_contention_{contention}
+        variables:
+          memory: [dsmem-rank0, dsmem-rank10, global]
           contention: [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096]
-        command: "../../build/atomic --mode throughput --op {op} --layout {layout} --memory {memory} --contention {contention} --reps {reps}"
+        command: "../../build/atomic --mode throughput --op {op} --scope inter --memory {memory} --contention {contention} --reps {reps}"

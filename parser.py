@@ -68,11 +68,18 @@ Table `barriers` (dgx-spark/barriers/barriers.cu: the kernels of
 barriers-naive.cu, thread 0 of each block only: the real cost)
   tag, barrier, block_size, blocks, seed, rep, block, cycles
 
+Table `p2p` (dgx-spark/throughput/p2p.cu: the paper's copy.cu, --bytes from
+rank src to rank dst through DSMEM or global memory)
+  tag, method (dsmem-push | dsmem-pull | gmem-ldst), src, dst (1 -> 0 in a
+  2-block cluster; 11 -> 10 in a 12-block one), bytes, block_size, seed, rep
+  cycles_receiver, cycles_sender   the time of each block, in SM cycles
+  cycles         max of the two: the transfer
+
 Table `atomic` (dgx-spark/atomics/atomic.cu: atomicOr / atomicAdd / atomicCAS)
-  tag, memory (throughput: smem | dsmem-rank0 | dsmem-rank10 |
-  dsmem-rank10-spread | global; latency: smem | dsmem | global),
-  mode (latency | throughput), op (or | add | cas), contention (threads
-  per word), layout (consecutive | scattered; "-" for latency), distance
+  tag, memory (throughput: smem | dsmem-rank0 | dsmem-rank10 | global;
+  latency: smem | dsmem | global), mode (latency | throughput),
+  op (or | add | cas), contention (threads per word), scope (intra | inter:
+  the threads of a word in one block or over several; "-" for latency), distance
   (dsmem latency: target rank), block_size, workers, steps, seed, rep
   atomics        how many were done in total
   ns, cycles     latency: the chain; throughput: first start to last end
@@ -118,8 +125,12 @@ TABLES = {
   "barriers": ("barriers", [
     "barrier", "block_size", "blocks", "seed", "rep", "block", "cycles",
   ]),
+  "p2p": ("p2p", [
+    "method", "src", "dst", "bytes", "block_size", "seed", "rep",
+    "cycles_receiver", "cycles_sender", "cycles",
+  ]),
   "atomic": ("atomic", [
-    "memory", "mode", "op", "contention", "layout", "distance",
+    "memory", "mode", "op", "contention", "scope", "distance",
     "block_size", "workers", "steps", "seed", "rep",
     "atomics", "ns", "cycles", "ns_per_atomic", "cycles_per_atomic", "gatomics_per_s",
   ]),

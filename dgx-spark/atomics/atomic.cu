@@ -5,33 +5,35 @@
 //   A BFS uses atomics to mark vertices visited (Or, CAS) and to count or
 //   claim slots (Add). Where the word lives decides the price: my own shared
 //   memory, another block's (DSMEM), or global memory (executed in L2). And
-//   it depends on how many threads hit the same word at the same time.
+//   it depends on how many threads hit the same word at the same time, and
+//   on WHERE those threads are: in my block, or in other blocks.
 //
 // THROUGHPUT (--mode throughput)
 //   One cluster of 12 blocks. Ranks 1..8 are the WORKERS: 8 blocks x 512
 //   threads = 4096 threads, each doing --steps atomics on one word, with the
-//   result never used. --contention x makes x threads share each word:
-//   threads 0..x-1 on one word, x..2x-1 on another, ... (x = 1: nobody
-//   collides; x = 4096: everybody on the same word). The groups use different
-//   words of a 16 KiB buffer (SBUF = 4096 words), so two groups never meet,
-//   laid out by --layout:
-//     consecutive   group g on word g: a warp's lanes on neighbouring words,
-//                   ONE cache line (the best case, like coalesced accesses)
-//     scattered     group g on a word spread by a permutation: a warp's lanes
-//                   on 32 different lines (vertices spread over the owner's
-//                   range, as in a BFS). Atomics of a warp on one line travel
-//                   as one request, so this is several times slower.
+//   result never used. --contention x makes x threads share each word (x = 1:
+//   nobody collides). There are always 4096 / x words in use, neighbouring
+//   words of a 16 KiB buffer (SBUF = 4096 words), and a warp's lanes always
+//   hit neighbouring words, ONE cache line. --scope says which threads share
+//   a word:
+//     intra   intra-block contention: the x threads of a word are neighbours
+//             in ONE block (x <= 512), so up to 32 of them are lanes of the
+//             same warp. In shared memory the hardware merges those
+//             (ATOMS.POPC.INC: one update per word per warp); in DSMEM and
+//             global memory it does not, they are applied one by one.
+//     inter   inter-block contention: the x threads of a word are spread over
+//             min(x, 8) different blocks, x / min(x, 8) neighbours from each
+//             (x = 2: the same thread of blocks 0 and 1; x = 8: the same
+//             thread of all 8 blocks; x = 4096: everybody). The collisions
+//             come from different SMs; within a warp only x / min(x, 8)
+//             lanes share a word.
 //   Where the buffer is (--memory):
-//     smem                  each worker on its OWN shared memory (so at most
-//                           one block, 512 threads, can share a word)
-//     dsmem-rank0           every worker on rank 0's shared memory: rank 0
-//                           is the hotspot (it sits on SM 0, the worst TPC)
-//     dsmem-rank10          the same, with rank 10 as the hotspot (SM 40)
-//     dsmem-rank10-spread   only the first x threads hit one word of rank
-//                           10; every other thread updates its own word in
-//                           the NEXT worker's shared memory (rank 1 -> 2, ...,
-//                           8 -> 1), so the rest of the traffic is spread
-//     global                every worker on one 16 KiB buffer in global memory
+//     smem          each worker on its OWN shared memory (intra only: no other
+//                   block can see it)
+//     dsmem-rank0   every worker on rank 0's shared memory: rank 0 is the
+//                   hotspot (it sits on SM 0, the worst TPC)
+//     dsmem-rank10  the same, with rank 10 as the hotspot (SM 40)
+//     global        every worker on one 16 KiB buffer in global memory
 //   Result: atomics per second, all workers together, from the first
 //   worker's start to the last one's end.
 //
@@ -41,9 +43,6 @@
 //   cas   atomicCAS(word, 0, my id + 1): one attempt to claim the word, as a
 //         BFS claims an unvisited vertex; after the first success the others
 //         fail, and every attempt is counted.
-//   In shared memory, an atomicAdd(word, 1) whose result is unused compiles
-//   to ATOMS.POPC.INC: one instruction adds, to each word, how many lanes of
-//   the warp hit it, so lanes of a warp colliding on a word cost one update.
 //
 // LATENCY (--mode latency)
 //   One thread of rank 0 runs a chain of --steps atomics, each on the word
@@ -59,7 +58,7 @@
 //   of the threads aimed at it) exactly when somebody aimed at it.
 //
 // Build: make atomic
-// Run:   build/atomic --mode throughput --memory dsmem-rank10 --op add --contention 64
+// Run:   build/atomic --mode throughput --memory dsmem-rank10 --op add --scope inter --contention 64
 
 #include <cooperative_groups.h>
 
@@ -72,38 +71,32 @@ constexpr int FIRST_WORKER = 1, WORKERS = 8;   // ranks 1..8 do the atomics
 
 enum { OR, ADD, CAS };
 static const char* OP_NAME[] = {"or", "add", "cas"};
-// Throughput targets, then the latency ones.
-enum { SMEM, DSMEM_RANK0, DSMEM_RANK10, DSMEM_RANK10_SPREAD, GLOBAL };
-static const char* TARGET_NAME[] = {"smem", "dsmem-rank0", "dsmem-rank10",
-                                    "dsmem-rank10-spread", "global"};
+enum { SMEM, DSMEM_RANK0, DSMEM_RANK10, GLOBAL };   // throughput --memory
+static const char* TARGET_NAME[] = {"smem", "dsmem-rank0", "dsmem-rank10", "global"};
+enum { INTRA, INTER };                              // --scope
+static const char* SCOPE_NAME[] = {"intra", "inter"};
 
-enum { CONSECUTIVE, SCATTERED };   // --layout
-static const char* LAYOUT_NAME[] = {"consecutive", "scattered"};
-
-// The word of group g. consecutive: word g. scattered: a permutation of
-// 0..SBUF-1 (an odd multiplier is a bijection modulo a power of two), so
-// different groups still never share a word, but neighbouring groups land
-// far apart.
-__host__ __device__ __forceinline__ unsigned word_of(unsigned group, int layout) {
-    return layout == SCATTERED ? (group * 2654435761u) & (SBUF - 1) : group & (SBUF - 1);
+// The word of thread `tid` of worker block `r` (0..7), with x threads per word.
+// intra: the x threads of a word are neighbours in one block.
+__host__ __device__ __forceinline__ unsigned word_intra(int r, int tid, int block_size, int x) {
+    return (unsigned)(r * block_size + tid) / x;
+}
+// inter: the x threads of a word are spread over B = min(x, 8) blocks, k = x / B
+// neighbouring threads from each. Blocks 0..B-1 use the first words, blocks
+// B..2B-1 the next ones, ...
+__host__ __device__ __forceinline__ unsigned word_inter(int r, int tid, int block_size, int x) {
+    const int B = x < WORKERS ? x : WORKERS;
+    const int k = x / B;
+    return (unsigned)((r / B) * (block_size / k) + tid / k);
 }
 
-// Where worker thread `w` (0..4095; for smem its thread index) of rank `rank`
-// sends its atomics: which buffer (a rank's shared memory, or -1 = the global
-// buffer) and which word. Used by the kernel and by the host check.
-struct Target { int rank; unsigned word; };
-__host__ __device__ __forceinline__ Target target_of(int target, int rank, int w, int tid,
-                                                     int contention, int layout) {
-    switch (target) {
-        case SMEM:         return {rank, word_of(tid / contention, layout)};
-        case DSMEM_RANK0:  return {0, word_of(w / contention, layout)};
-        case DSMEM_RANK10: return {10, word_of(w / contention, layout)};
-        case DSMEM_RANK10_SPREAD:
-            if (w < contention) return {10, word_of(0, layout)};
-            return {rank == FIRST_WORKER + WORKERS - 1 ? FIRST_WORKER : rank + 1,
-                    word_of(w, layout)};
-        default:           return {-1, word_of(w / contention, layout)};
-    }
+// The buffer the atomics of `target` go to: a rank's shared memory, or -1 =
+// the global buffer. smem: each worker its own.
+__host__ __device__ __forceinline__ int buffer_of(int target, int rank) {
+    if (target == SMEM)         return rank;
+    if (target == DSMEM_RANK0)  return 0;
+    if (target == DSMEM_RANK10) return 10;
+    return -1;
 }
 
 __device__ __forceinline__ void one_atomic(int op, unsigned* p, unsigned id) {
@@ -118,9 +111,13 @@ struct BlockTime {
     unsigned long long start_ns, end_ns;   // %globaltimer: one clock for the whole GPU
 };
 
+// Everything but the choice of the word: zero the buffers, run the atomics
+// on `word` of the target buffer, time them, and dump every shared buffer
+// for the host check. buf is declared HERE, so for smem the compiler sees a
+// shared-memory pointer and emits ATOMS.
 template <int TARGET, int OP>
-__global__ void atomic_throughput(unsigned* global_buf, int contention, int layout, int steps,
-                                  int warmup, BlockTime* out, unsigned* dump) {
+__device__ __forceinline__ void throughput(unsigned* global_buf, unsigned word, int steps,
+                                           int warmup, BlockTime* out, unsigned* dump) {
     __shared__ unsigned buf[SBUF];
     cg::cluster_group cluster = cg::this_cluster();
     const int rank = (int)cluster.block_rank();
@@ -128,20 +125,19 @@ __global__ void atomic_throughput(unsigned* global_buf, int contention, int layo
     cluster.sync();   // every buffer is zero before anyone uses it
 
     const bool worker = rank >= FIRST_WORKER && rank < FIRST_WORKER + WORKERS;
-    const int w = (rank - FIRST_WORKER) * blockDim.x + threadIdx.x;   // my number among the workers
-    const Target t = target_of(TARGET, rank, w, threadIdx.x, contention, layout);
+    const unsigned id = (rank - FIRST_WORKER) * blockDim.x + threadIdx.x;   // my number among the workers
     unsigned* p;
-    if (TARGET == SMEM)        p = &buf[t.word];   // a shared-memory pointer: ATOMS
-    else if (TARGET == GLOBAL) p = &global_buf[t.word];
-    else                       p = cluster.map_shared_rank(buf, t.rank) + t.word;
+    if (TARGET == SMEM)        p = &buf[word];
+    else if (TARGET == GLOBAL) p = &global_buf[word];
+    else                       p = cluster.map_shared_rank(buf, buffer_of(TARGET, rank)) + word;
 
     if (worker)
-        for (int s = 0; s < warmup * steps; s++) one_atomic(OP, p, w);
+        for (int s = 0; s < warmup * steps; s++) one_atomic(OP, p, id);
     cluster.sync();   // the workers start together
     const long long c0 = clock64();
     const unsigned long long t0 = globaltimer();
     if (worker)
-        for (int s = 0; s < steps; s++) one_atomic(OP, p, w);
+        for (int s = 0; s < steps; s++) one_atomic(OP, p, id);
     __syncthreads();   // the block is done when its slowest thread is
     if (threadIdx.x == 0) {
         out[rank].cycles = clock64() - c0;
@@ -150,6 +146,24 @@ __global__ void atomic_throughput(unsigned* global_buf, int contention, int layo
     }
     cluster.sync();   // every atomic on every buffer is done
     for (int i = threadIdx.x; i < SBUF; i += blockDim.x) dump[rank * SBUF + i] = buf[i];
+}
+
+template <int TARGET, int OP>
+__global__ void atomic_throughput_intra(unsigned* global_buf, int contention, int steps,
+                                        int warmup, BlockTime* out, unsigned* dump) {
+    const int r = (int)cg::this_cluster().block_rank() - FIRST_WORKER;
+    // smem: every worker has its own buffer, so the word only depends on my thread
+    const unsigned word = TARGET == SMEM ? threadIdx.x / contention
+                                         : word_intra(r, threadIdx.x, blockDim.x, contention);
+    throughput<TARGET, OP>(global_buf, word, steps, warmup, out, dump);
+}
+
+template <int TARGET, int OP>
+__global__ void atomic_throughput_inter(unsigned* global_buf, int contention, int steps,
+                                        int warmup, BlockTime* out, unsigned* dump) {
+    const int r = (int)cg::this_cluster().block_rank() - FIRST_WORKER;
+    const unsigned word = word_inter(r, threadIdx.x, blockDim.x, contention);
+    throughput<TARGET, OP>(global_buf, word, steps, warmup, out, dump);
 }
 
 // Latency: thread 0 of rank 0 runs a chain on word 0 of its own shared memory
@@ -187,21 +201,25 @@ __global__ void atomic_latency(unsigned* global_buf, int rank_target, int steps,
 // ------------------------------------------------------------ host
 
 // The host replay of one throughput run: what every word must hold.
-static bool check(int target, int op, int contention, int layout, int block_size,
+static bool check(int target, int op, int scope, int contention, int block_size,
                   int atomics_per_thread,
                   const std::vector<unsigned>& dump, const std::vector<unsigned>& global) {
     // expected value per (buffer, word); buffer CLUSTER_SIZE = the global one
     std::vector<unsigned long long> add((CLUSTER_SIZE + 1) * SBUF, 0);
     std::vector<unsigned> orv((CLUSTER_SIZE + 1) * SBUF, 0);
     std::vector<std::vector<unsigned>> claimers((CLUSTER_SIZE + 1) * SBUF);
-    for (int r = FIRST_WORKER; r < FIRST_WORKER + WORKERS; r++)
+    for (int rank = FIRST_WORKER; rank < FIRST_WORKER + WORKERS; rank++)
         for (int tid = 0; tid < block_size; tid++) {
-            const int w = (r - FIRST_WORKER) * block_size + tid;
-            const Target t = target_of(target, r, w, tid, contention, layout);
-            const int k = (t.rank < 0 ? CLUSTER_SIZE : t.rank) * SBUF + t.word;
+            const int r = rank - FIRST_WORKER;
+            const unsigned id = r * block_size + tid;
+            const unsigned word = scope == INTER ? word_inter(r, tid, block_size, contention)
+                                : target == SMEM ? tid / contention
+                                                 : word_intra(r, tid, block_size, contention);
+            const int b = buffer_of(target, rank);
+            const int k = (b < 0 ? CLUSTER_SIZE : b) * SBUF + word;
             add[k] += atomics_per_thread;
-            orv[k] |= 1u << (w & 31);
-            claimers[k].push_back(w + 1);
+            orv[k] |= 1u << (id & 31);
+            claimers[k].push_back(id + 1);
         }
     for (int k = 0; k < (CLUSTER_SIZE + 1) * SBUF; k++) {
         const unsigned got = k < CLUSTER_SIZE * SBUF ? dump[k] : global[k - CLUSTER_SIZE * SBUF];
@@ -225,10 +243,10 @@ int main(int argc, char** argv) {
     parse_args(argc, argv, &a, "atomic",
                "  --mode M          throughput | latency                  (default latency)\n"
                "  --op OP           or | add | cas                        (default add)\n"
-               "  --memory M        throughput: smem | dsmem-rank0 | dsmem-rank10 |\n"
-               "                    dsmem-rank10-spread | global;  latency: smem | dsmem | global\n"
-               "  --contention x    throughput: threads per word, 1..4096 (default 1)\n"
-               "  --layout L        throughput: consecutive | scattered   (default consecutive)\n"
+               "  --memory M        throughput: smem | dsmem-rank0 | dsmem-rank10 | global;\n"
+               "                    latency: smem | dsmem | global\n"
+               "  --scope S         throughput: intra | inter (-block contention) (default intra)\n"
+               "  --contention x    throughput: threads per word, a power of two (default 1)\n"
                "  --distance D      dsmem latency: target rank            (default 1)\n"
                "  --steps N         atomics per thread                    (default 1024)\n"
                "  --block-size N    throughput: threads per worker block  (default 512)\n");
@@ -242,7 +260,7 @@ int main(int argc, char** argv) {
     const char* memory_name = a.memory ? a.memory : "smem";
     int target = -1;   // throughput target, or latency memory 0 smem / 1 dsmem / 2 global
     if (throughput) {
-        for (int t = 0; t < 5; t++)
+        for (int t = 0; t < 4; t++)
             if (strcmp(memory_name, TARGET_NAME[t]) == 0) target = t;
     } else {
         const char* lat[] = {"smem", "dsmem", "global"};
@@ -250,26 +268,31 @@ int main(int argc, char** argv) {
             if (strcmp(memory_name, lat[t]) == 0) target = t;
     }
     if (target < 0) {
-        fprintf(stderr, "atomic: --memory must be smem, dsmem-rank0, dsmem-rank10, "
-                        "dsmem-rank10-spread or global (throughput); smem, dsmem or global (latency)\n");
+        fprintf(stderr, "atomic: --memory must be smem, dsmem-rank0, dsmem-rank10 or global "
+                        "(throughput); smem, dsmem or global (latency)\n");
         return 1;
     }
-    int layout = -1;
-    for (int l = 0; l < 2; l++)
-        if (strcmp(a.layout ? a.layout : "consecutive", LAYOUT_NAME[l]) == 0) layout = l;
-    if (layout < 0) { fprintf(stderr, "atomic: --layout must be consecutive or scattered\n"); return 1; }
+    int scope = -1;
+    for (int s = 0; s < 2; s++)
+        if (strcmp(a.scope ? a.scope : "intra", SCOPE_NAME[s]) == 0) scope = s;
+    if (scope < 0) { fprintf(stderr, "atomic: --scope must be intra or inter\n"); return 1; }
     const int threads = WORKERS * a.block_size;   // all the workers' threads
     if (throughput) {
-        if (a.block_size < 32 || a.block_size > 1024 || a.block_size % 32 ||
+        if (a.block_size < 32 || a.block_size > 1024 || (a.block_size & (a.block_size - 1)) ||
             threads > SBUF) {
-            fprintf(stderr, "atomic: --block-size must be a multiple of 32 with %d x it <= %d "
+            fprintf(stderr, "atomic: --block-size must be a power of two >= 32 with %d x it <= %d "
                             "(every thread needs its own word at --contention 1)\n", WORKERS, SBUF);
             return 1;
         }
-        const int most = target == SMEM ? a.block_size : threads;   // who can share a word
-        if (a.contention < 1 || a.contention > most) {
-            fprintf(stderr, "atomic: --contention must be 1..%d for --memory %s\n", most,
-                    memory_name);
+        if (scope == INTER && target == SMEM) {
+            fprintf(stderr, "atomic: --scope inter needs dsmem or global: no other block can "
+                            "see a block's own shared memory\n");
+            return 1;
+        }
+        const int most = scope == INTRA ? a.block_size : threads;   // who can share a word
+        if (a.contention < 1 || a.contention > most || (a.contention & (a.contention - 1))) {
+            fprintf(stderr, "atomic: --contention must be a power of two, 1..%d for --scope %s\n",
+                    most, SCOPE_NAME[scope]);
             return 1;
         }
     } else if (target == 1 && (a.distance < 1 || a.distance >= CLUSTER_SIZE)) {
@@ -277,17 +300,26 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // ---- the kernel for this target / op
-    using ThroughputKernel = void (*)(unsigned*, int, int, int, int, BlockTime*, unsigned*);
-    static const ThroughputKernel throughput_kernels[5][3] = {
-        {atomic_throughput<SMEM, OR>, atomic_throughput<SMEM, ADD>, atomic_throughput<SMEM, CAS>},
-        {atomic_throughput<DSMEM_RANK0, OR>, atomic_throughput<DSMEM_RANK0, ADD>,
-         atomic_throughput<DSMEM_RANK0, CAS>},
-        {atomic_throughput<DSMEM_RANK10, OR>, atomic_throughput<DSMEM_RANK10, ADD>,
-         atomic_throughput<DSMEM_RANK10, CAS>},
-        {atomic_throughput<DSMEM_RANK10_SPREAD, OR>, atomic_throughput<DSMEM_RANK10_SPREAD, ADD>,
-         atomic_throughput<DSMEM_RANK10_SPREAD, CAS>},
-        {atomic_throughput<GLOBAL, OR>, atomic_throughput<GLOBAL, ADD>, atomic_throughput<GLOBAL, CAS>},
+    // ---- the kernel for this scope / target / op
+    using ThroughputKernel = void (*)(unsigned*, int, int, int, BlockTime*, unsigned*);
+    static const ThroughputKernel intra_kernels[4][3] = {
+        {atomic_throughput_intra<SMEM, OR>, atomic_throughput_intra<SMEM, ADD>,
+         atomic_throughput_intra<SMEM, CAS>},
+        {atomic_throughput_intra<DSMEM_RANK0, OR>, atomic_throughput_intra<DSMEM_RANK0, ADD>,
+         atomic_throughput_intra<DSMEM_RANK0, CAS>},
+        {atomic_throughput_intra<DSMEM_RANK10, OR>, atomic_throughput_intra<DSMEM_RANK10, ADD>,
+         atomic_throughput_intra<DSMEM_RANK10, CAS>},
+        {atomic_throughput_intra<GLOBAL, OR>, atomic_throughput_intra<GLOBAL, ADD>,
+         atomic_throughput_intra<GLOBAL, CAS>},
+    };
+    static const ThroughputKernel inter_kernels[4][3] = {
+        {nullptr, nullptr, nullptr},   // smem: no inter-block contention
+        {atomic_throughput_inter<DSMEM_RANK0, OR>, atomic_throughput_inter<DSMEM_RANK0, ADD>,
+         atomic_throughput_inter<DSMEM_RANK0, CAS>},
+        {atomic_throughput_inter<DSMEM_RANK10, OR>, atomic_throughput_inter<DSMEM_RANK10, ADD>,
+         atomic_throughput_inter<DSMEM_RANK10, CAS>},
+        {atomic_throughput_inter<GLOBAL, OR>, atomic_throughput_inter<GLOBAL, ADD>,
+         atomic_throughput_inter<GLOBAL, CAS>},
     };
     using LatencyKernel = void (*)(unsigned*, int, int, int, BlockTime*);
     static const LatencyKernel latency_kernels[3][3] = {
@@ -295,7 +327,9 @@ int main(int argc, char** argv) {
         {atomic_latency<1, OR>, atomic_latency<1, ADD>, atomic_latency<1, CAS>},
         {atomic_latency<2, OR>, atomic_latency<2, ADD>, atomic_latency<2, CAS>},
     };
-    const void* kernel = throughput ? (const void*)throughput_kernels[target][op]
+    const ThroughputKernel throughput_kernel =
+        throughput ? (scope == INTRA ? intra_kernels : inter_kernels)[target][op] : nullptr;
+    const void* kernel = throughput ? (const void*)throughput_kernel
                                     : (const void*)latency_kernels[target][op];
 
     // ---- launch configuration: one cluster of 12 blocks
@@ -316,12 +350,12 @@ int main(int argc, char** argv) {
     const double atomics = throughput ? (double)threads * a.steps : a.steps;
     char extra[300];
     snprintf(extra, sizeof extra,
-             "# mode: %s\n# op: %s\n# memory: %s\n# contention: %d\n# layout: %s\n"
+             "# mode: %s\n# op: %s\n# memory: %s\n# contention: %d\n# scope: %s\n"
              "# workers: %d (ranks %d..%d)\n# buffer_words: %d\n",
              throughput ? "throughput" : "latency", OP_NAME[op], memory_name, contention,
-             LAYOUT_NAME[layout], workers, FIRST_WORKER, FIRST_WORKER + workers - 1, SBUF);
+             SCOPE_NAME[scope], workers, FIRST_WORKER, FIRST_WORKER + workers - 1, SBUF);
     print_header(argc, argv, a, 0, extra,
-                 "benchmark,memory,mode,op,contention,layout,distance,block_size,workers,steps,seed,rep,"
+                 "benchmark,memory,mode,op,contention,scope,distance,block_size,workers,steps,seed,rep,"
                  "atomics,ns,cycles,ns_per_atomic,cycles_per_atomic,gatomics_per_s\n");
 
     // ---- memory the kernel needs
@@ -337,8 +371,8 @@ int main(int argc, char** argv) {
         CUDA_CHECK(cudaMemset(global_buf, 0, SBUF * sizeof(unsigned)));
         CUDA_CHECK(cudaMemset(out, 0, CLUSTER_SIZE * sizeof(BlockTime)));
         if (throughput)
-            CUDA_CHECK(cudaLaunchKernelEx(&cfg, throughput_kernels[target][op], global_buf,
-                                          contention, layout, a.steps, a.warmup, out, dump));
+            CUDA_CHECK(cudaLaunchKernelEx(&cfg, throughput_kernel, global_buf, contention, a.steps,
+                                          a.warmup, out, dump));
         else
             CUDA_CHECK(cudaLaunchKernelEx(&cfg, latency_kernels[target][op], global_buf,
                                           a.distance, a.steps, a.warmup, out));
@@ -349,7 +383,7 @@ int main(int argc, char** argv) {
                                   cudaMemcpyDeviceToHost));
             CUDA_CHECK(cudaMemcpy(host_global.data(), global_buf, SBUF * sizeof(unsigned),
                                   cudaMemcpyDeviceToHost));
-            if (!check(target, op, contention, layout, a.block_size, a.steps * (a.warmup + 1),
+            if (!check(target, op, scope, contention, a.block_size, a.steps * (a.warmup + 1),
                        host_dump, host_global))
                 return 1;
         }
@@ -363,7 +397,7 @@ int main(int argc, char** argv) {
         const double cycles_per = throughput ? 0.0 : (double)out[0].cycles / atomics;
         printf("atomic,%s,%s,%s,%d,%s,%d,%d,%d,%d,%d,%d,%.0f,%.0f,%lld,%.4f,%.2f,%.4f\n",
                memory_name, throughput ? "throughput" : "latency", OP_NAME[op], contention,
-               throughput ? LAYOUT_NAME[layout] : "-",
+               throughput ? SCOPE_NAME[scope] : "-",
                throughput ? 0 : a.distance, (int)cfg.blockDim.x, workers, a.steps, a.seed, rep,
                atomics, ns, out[from].cycles, ns / atomics, cycles_per, atomics / ns);
         per_atomic.push_back(throughput ? ns / atomics : cycles_per);
@@ -373,8 +407,8 @@ int main(int argc, char** argv) {
     fprintf(stderr, "atomic %s %s on %s", throughput ? "throughput" : "latency", OP_NAME[op],
             memory_name);
     if (throughput)
-        fprintf(stderr, ", %d threads per word, %s words, %d workers x %d threads, verified",
-                contention, LAYOUT_NAME[layout], WORKERS, a.block_size);
+        fprintf(stderr, ", %s-block contention, %d threads per word, %d workers x %d threads, "
+                        "verified", SCOPE_NAME[scope], contention, WORKERS, a.block_size);
     fprintf(stderr, "\n");
     print_stats_line(throughput ? "ns per atomic" : "cycles/atomic", per_atomic);
     print_stats_line("G atomics/s", rate);

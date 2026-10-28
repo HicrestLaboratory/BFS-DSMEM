@@ -107,3 +107,19 @@ jobs:
       reps: [21]
       stride: [4, 8, 16, 32, 64, 128]
     command: "../../build/smem_bandwidth --op read --width 4 --stride {stride} --reps {reps}"
+
+  # Point to point, the kernels of the paper's copy.cu (p2p.cu): --bytes from
+  # one block to another, through DSMEM (push / pull) or global memory, on
+  # ranks 1 -> 0 of a 2-block cluster, and the DSMEM pull also on 11 -> 10 of
+  # a 12-block cluster (the fastest pair). Plot: plot-p2p.json.
+  - config: local
+    variables:
+      reps: [21]
+      bytes: [16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384, 32768]
+      block_size: [32, 64, 128, 256, 512, 1024]
+    command: "../../build/p2p --method {method} --src {src} --dst {dst} --bytes {bytes} --block-size {block_size} --reps {reps}"
+    config_jobs:
+      - tag: "p2p_{method}_p{src}-{dst}_b{bytes}_t{block_size}"
+        variables: {method: [dsmem-push, dsmem-pull, gmem-ldst], src: [1], dst: [0]}
+      - tag: "p2p_{method}_p{src}-{dst}_b{bytes}_t{block_size}"
+        variables: {method: [dsmem-pull], src: [11], dst: [10]}
