@@ -14,7 +14,7 @@
 //
 // THE MEASUREMENT
 //   Every thread of every block, once, at the start of the kernel:
-//       start = clock();  barrier;  end = clock();
+//       start = clock64();  barrier;  end = clock64();
 //   --warmup untimed launches come first: without them the first launches
 //   are off (cluster.sync(): ~3850, then ~840, then from the 8th launch on
 //   ~470 cycles).
@@ -22,7 +22,7 @@
 //   WARNING: this does not always measure the barrier. A barrier compiles to
 //   BAR.SYNC.DEFER_BLOCKING: the warp is not stopped AT the barrier but a
 //   few instructions later, and a clock read is not a memory access, so
-//   nothing makes it wait. The second clock() can execute before the barrier
+//   nothing makes it wait. The second clock64() can execute before the barrier
 //   is over: e.g. grid.sync() shows ~1250 cycles on warp 0 and ~130 on the
 //   other warps, which in fact wait just as long. barriers-shared.cu adds a
 //   shared-memory load after the barrier to fix this.
@@ -34,23 +34,23 @@
 
 #include "../common.cuh"   // CUDA_CHECK, Args, print_header, print_stats_line, ...
 
-__managed__ long arrive_time[12][1024];
+__managed__ long long arrive_time[12][1024];
 
 __global__ void barrier_kernel() {
-  auto start = clock();
+  long long start = clock64();
   __syncthreads();
-  auto end = clock();
-  auto duration = end - start;
+  long long end = clock64();
+  long long duration = end - start;
 
   arrive_time[blockIdx.x][threadIdx.x] = duration;
 }
 
 __global__ void cluster_sync_kernel() {
-  auto cluster = cooperative_groups::this_cluster();
-  auto start = clock();
+  cooperative_groups::cluster_group cluster = cooperative_groups::this_cluster();
+  long long start = clock64();
   cluster.sync();
-  auto end = clock();
-  auto duration = end - start;
+  long long end = clock64();
+  long long duration = end - start;
 
   arrive_time[blockIdx.x][threadIdx.x] = duration;
 }
@@ -59,21 +59,28 @@ __global__ void cluster_sync_kernel() {
 // write is made visible (no MEMBAR). The difference to cluster_sync_kernel is
 // the price of the release.
 __global__ void cluster_relaxed_kernel() {
-  auto start = clock();
+  long long start = clock64();
   asm volatile("barrier.cluster.arrive.relaxed.aligned;\n\t"
                "barrier.cluster.wait.aligned;" ::: "memory");
-  auto end = clock();
-  auto duration = end - start;
+  long long end = clock64();
+  long long duration = end - start;
 
   arrive_time[blockIdx.x][threadIdx.x] = duration;
 }
 
 __global__ void grid_sync_kernel() {
-  auto grid = cooperative_groups::this_grid();
-  auto start = clock();
+  cooperative_groups::grid_group grid = cooperative_groups::this_grid();
+  long long start = clock64();
   grid.sync();
-  auto end = clock();
+  long long end = clock64();
   arrive_time[blockIdx.x][threadIdx.x] = end - start;
+}
+
+// One launch: cooperative for grid.sync(), one cluster of --blocks otherwise.
+void launch(void (*kernel)(), bool grid, const Args& a, const cudaLaunchConfig_t& config) {
+  if (grid) CUDA_CHECK(cudaLaunchCooperativeKernel((void*)kernel, a.blocks, a.block_size, nullptr));
+  else      CUDA_CHECK(cudaLaunchKernelEx(&config, kernel));
+  CUDA_CHECK(cudaDeviceSynchronize());
 }
 
 int main(int argc, char** argv) {
@@ -121,24 +128,19 @@ int main(int argc, char** argv) {
   attribute[0].val.clusterDim.z = 1;
   config.attrs = attribute;
   config.numAttrs = 1;
-  auto launch = [&]() {
-    if (grid) CUDA_CHECK(cudaLaunchCooperativeKernel((void*)kernel, a.blocks, a.block_size, nullptr));
-    else      CUDA_CHECK(cudaLaunchKernelEx(&config, kernel));
-    CUDA_CHECK(cudaDeviceSynchronize());
-  };
 
   char extra[200];
   snprintf(extra, sizeof extra, "# barrier: %s\n# blocks: %d\n", barrier, a.blocks);
   print_header(argc, argv, a, 0, extra,
                "benchmark,barrier,block_size,blocks,seed,rep,block,thread,cycles\n");
 
-  for (int w = 0; w < a.warmup; w++) launch();
+  for (int w = 0; w < a.warmup; w++) launch(kernel, grid, a, config);
   std::vector<double> all;
   for (int rep = 0; rep < a.reps; rep++) {
-    launch();
+    launch(kernel, grid, a, config);
     for (int i = 0; i < a.blocks; i++) {
       for (int j = 0; j < a.block_size; j++) {
-        printf("barriers-naive,%s,%d,%d,%d,%d,%d,%d,%ld\n", barrier, a.block_size, a.blocks, a.seed,
+        printf("barriers-naive,%s,%d,%d,%d,%d,%d,%d,%lld\n", barrier, a.block_size, a.blocks, a.seed,
                rep, i, j, arrive_time[i][j]);
         all.push_back(arrive_time[i][j]);
       }

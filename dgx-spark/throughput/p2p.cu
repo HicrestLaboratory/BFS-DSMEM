@@ -59,7 +59,7 @@ __managed__ long long d_time[2];
 template <typename T>
 __global__ __cluster_dims__(2, 1, 1)
 void push(int bytes) {
-    auto cluster = cg::this_cluster();
+    cg::cluster_group cluster = cg::this_cluster();
 
     // Per-thread accumulator. The register qualifier requests register storage.
     int register counter = 0;
@@ -72,7 +72,7 @@ void push(int bytes) {
 
     // Map the shared-memory buffer of rank 0.
     // Block 1 can use this pointer to write into block 0's shared memory.
-    auto cluster_smem = cluster.map_shared_rank(sdata, 0);
+    T* cluster_smem = cluster.map_shared_rank(sdata, 0);
 
     // Convert the requested transfer size from bytes to elements.
     int max_index = bytes / sizeof(T);
@@ -82,7 +82,7 @@ void push(int bytes) {
     cluster.sync();
 
     // Start timing. Each block records its own timestamp.
-    auto start = clock64();
+    long long start = clock64();
 
     // Block 1 is the sender: write directly into block 0's shared memory.
     if (blockIdx.x == 1) {
@@ -106,8 +106,8 @@ void push(int bytes) {
     // before recording the end timestamp.
     __syncthreads();
 
-    auto end = clock64();
-    auto duration = end - start;
+    long long end = clock64();
+    long long duration = end - start;
 
     // Store the elapsed time measured by this block.
     if (threadIdx.x == 0) {
@@ -135,7 +135,7 @@ void push(int bytes) {
 template <typename T>
 __global__ __cluster_dims__(2, 1, 1)
 void pull(int bytes) {
-    auto cluster = cg::this_cluster();
+    cg::cluster_group cluster = cg::this_cluster();
 
     int register counter = 0;
 
@@ -147,12 +147,12 @@ void pull(int bytes) {
 
     // Map block 1's shared memory.
     // Block 0 can read remote_smem to access data stored by block 1.
-    auto cluster_smem = cluster.map_shared_rank(sdata, 1);
+    T* cluster_smem = cluster.map_shared_rank(sdata, 1);
 
     // Synchronize the cluster before starting the transfer.
     cluster.sync();
 
-    auto start = clock64();
+    long long start = clock64();
 
     // Block 1 is the sender: populate its own local shared memory.
     if (blockIdx.x == 1) {
@@ -175,8 +175,8 @@ void pull(int bytes) {
     // Wait for all threads in the block to finish their reads.
     __syncthreads();
 
-    auto end = clock64();
-    auto duration = end - start;
+    long long end = clock64();
+    long long duration = end - start;
 
     if (threadIdx.x == 0) {
         d_time[blockIdx.x] = duration;
@@ -200,7 +200,7 @@ void pull(int bytes) {
 template <typename T>
 __global__ __cluster_dims__(12, 1, 1)
 void pull_v2(int bytes) {
-    auto cluster = cg::this_cluster();
+    cg::cluster_group cluster = cg::this_cluster();
 
     int counter = 0;
 
@@ -215,7 +215,7 @@ void pull_v2(int bytes) {
 
     // Map rank 11's shared memory: rank 10 reads it remotely. (The paper
     // mapped rank 10, i.e. rank 10's OWN memory: no DSMEM access at all.)
-    auto remote_sdata = cluster.map_shared_rank(sdata, 11);
+    T* remote_sdata = cluster.map_shared_rank(sdata, 11);
 
     // Synchronize all blocks before starting the measurement.
     cluster.sync();
@@ -269,7 +269,7 @@ void pull_v2(int bytes) {
 template <typename T>
 __global__ __cluster_dims__(2, 1, 1)
 void global(int bytes) {
-    auto cluster = cg::this_cluster();
+    cg::cluster_group cluster = cg::this_cluster();
 
     int register counter = 0;
 
@@ -283,7 +283,7 @@ void global(int bytes) {
 
     cluster.sync();
 
-    auto start = clock64();
+    long long start = clock64();
 
     // Block 1 writes the data into global memory.
     if (blockIdx.x == 1) {
@@ -304,8 +304,8 @@ void global(int bytes) {
 
     __syncthreads();
 
-    auto end = clock64();
-    auto duration = end - start;
+    long long end = clock64();
+    long long duration = end - start;
 
     if (threadIdx.x == 0) {
         d_time[blockIdx.x] = duration;
@@ -321,6 +321,13 @@ void global(int bytes) {
 // -----------------------------------------------------------------------------
 // HOST
 // -----------------------------------------------------------------------------
+// One launch of `blocks` blocks (one cluster), waited for.
+void launch(void (*kernel)(int), int blocks, const Args& a) {
+    kernel<<<blocks, a.block_size>>>(a.bytes);
+    CUDA_CHECK(cudaGetLastError());
+    CUDA_CHECK(cudaDeviceSynchronize());
+}
+
 int main(int argc, char** argv) {
     Args a;
     a.method = 0;   // dsmem-pull
@@ -368,15 +375,10 @@ int main(int argc, char** argv) {
     print_header(argc, argv, a, 0, extra,
                  "benchmark,method,src,dst,bytes,block_size,seed,rep,cycles_receiver,cycles_sender,cycles\n");
 
-    auto launch = [&]() {
-        kernel<<<blocks, a.block_size>>>(a.bytes);
-        CUDA_CHECK(cudaGetLastError());
-        CUDA_CHECK(cudaDeviceSynchronize());
-    };
-    for (int w = 0; w < a.warmup; w++) launch();
+    for (int w = 0; w < a.warmup; w++) launch(kernel, blocks, a);
     std::vector<double> cycles;
     for (int rep = 0; rep < a.reps; rep++) {
-        launch();
+        launch(kernel, blocks, a);
         // d_time[0]: the receiver (block 0, or rank 10); d_time[1]: the sender
         const long long transfer = std::max(d_time[0], d_time[1]);
         printf("p2p,%s,%d,%d,%d,%d,%d,%d,%lld,%lld,%lld\n", method, a.src, a.dst, a.bytes, a.block_size,

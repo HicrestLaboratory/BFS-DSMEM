@@ -128,7 +128,7 @@ int main() {
         }
         for (size_t k = 0; k < ws.size(); k++)
             printf("%-10d %18.1f %20.1f\n", ws[k], resA[0][k], resA[1][k]);
-        for (auto b : bufs) cudaFree(b);
+        for (unsigned* b : bufs) cudaFree(b);
     }
 
     // -------- B. carveout sweep, no shared memory --------
@@ -159,7 +159,7 @@ int main() {
             }
             printf("%-22d %-14d %-12d\n", pc, plateau, knee);
         }
-        for (auto b : bufs) cudaFree(b);
+        for (unsigned* b : bufs) cudaFree(b);
     }
 
     // -------- C. the trap: 8 KiB dynamic smem, default vs explicit carveout --------
@@ -194,7 +194,7 @@ int main() {
             else { char nm[40]; snprintf(nm, sizeof nm, "carveout set to %d%%", pc);
                    printf("%-34s %-12d\n", nm, plateau); }
         }
-        for (auto b : bufs) cudaFree(b);
+        for (unsigned* b : bufs) cudaFree(b);
     }
     return 0;
 }

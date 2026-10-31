@@ -90,20 +90,34 @@ __host__ __device__ __forceinline__ unsigned word_inter(int r, int tid, int bloc
     return (unsigned)((r / B) * (block_size / k) + tid / k);
 }
 
-// The buffer the atomics of `target` go to: a rank's shared memory, or -1 =
-// the global buffer. smem: each worker its own.
-__host__ __device__ __forceinline__ int buffer_of(int target, int rank) {
-    if (target == SMEM)         return rank;
-    if (target == DSMEM_RANK0)  return 0;
-    if (target == DSMEM_RANK10) return 10;
-    return -1;
-}
+// ---- the operations: one function each, chosen at compile time (template
+// argument), so the timed loop has no branch.
+__device__ __forceinline__ void atomic_or(unsigned* p, unsigned id) { atomicOr(p, 1u << (id & 31)); }
+__device__ __forceinline__ void atomic_add(unsigned* p, unsigned id) { atomicAdd(p, 1u); }
+__device__ __forceinline__ void atomic_cas(unsigned* p, unsigned id) { atomicCAS(p, 0u, id + 1); }
+using Atomic = void (*)(unsigned*, unsigned);
 
-__device__ __forceinline__ void one_atomic(int op, unsigned* p, unsigned id) {
-    if (op == OR)       atomicOr(p, 1u << (id & 31));
-    else if (op == ADD) atomicAdd(p, 1u);
-    else                atomicCAS(p, 0u, id + 1);
+// Latency: the same operations, returning the word's old value (always 0).
+__device__ __forceinline__ unsigned chain_or(unsigned* p) { return atomicOr(p, 0u); }
+__device__ __forceinline__ unsigned chain_add(unsigned* p) { return atomicAdd(p, 0u); }
+__device__ __forceinline__ unsigned chain_cas(unsigned* p) { return atomicCAS(p, 0u, 0u); }
+using Chain = unsigned (*)(unsigned*);
+
+// ---- the memories: where the buffer is. `buf` is my block's shared buffer;
+// after inlining the compiler still sees it is shared memory and emits ATOMS.
+__device__ __forceinline__ unsigned* own_smem(unsigned* buf, unsigned* global_buf,
+                                              cg::cluster_group& cluster, int rank) {
+    return buf;
 }
+__device__ __forceinline__ unsigned* remote_smem(unsigned* buf, unsigned* global_buf,
+                                                 cg::cluster_group& cluster, int rank) {
+    return cluster.map_shared_rank(buf, rank);
+}
+__device__ __forceinline__ unsigned* global_mem(unsigned* buf, unsigned* global_buf,
+                                                cg::cluster_group& cluster, int rank) {
+    return global_buf;
+}
+using Memory = unsigned* (*)(unsigned*, unsigned*, cg::cluster_group&, int);
 
 // What one block measured.
 struct BlockTime {
@@ -112,12 +126,11 @@ struct BlockTime {
 };
 
 // Everything but the choice of the word: zero the buffers, run the atomics
-// on `word` of the target buffer, time them, and dump every shared buffer
-// for the host check. buf is declared HERE, so for smem the compiler sees a
-// shared-memory pointer and emits ATOMS.
-template <int TARGET, int OP>
-__device__ __forceinline__ void throughput(unsigned* global_buf, unsigned word, int steps,
-                                           int warmup, BlockTime* out, unsigned* dump) {
+// on `word` of the buffer MEMORY gives (remote_smem: rank `target_rank`'s),
+// time them, and dump every shared buffer for the host check.
+template <Memory MEMORY, Atomic ATOMIC>
+__device__ __forceinline__ void throughput(unsigned* global_buf, int target_rank, unsigned word,
+                                           int steps, int warmup, BlockTime* out, unsigned* dump) {
     __shared__ unsigned buf[SBUF];
     cg::cluster_group cluster = cg::this_cluster();
     const int rank = (int)cluster.block_rank();
@@ -126,18 +139,15 @@ __device__ __forceinline__ void throughput(unsigned* global_buf, unsigned word, 
 
     const bool worker = rank >= FIRST_WORKER && rank < FIRST_WORKER + WORKERS;
     const unsigned id = (rank - FIRST_WORKER) * blockDim.x + threadIdx.x;   // my number among the workers
-    unsigned* p;
-    if (TARGET == SMEM)        p = &buf[word];
-    else if (TARGET == GLOBAL) p = &global_buf[word];
-    else                       p = cluster.map_shared_rank(buf, buffer_of(TARGET, rank)) + word;
+    unsigned* p = MEMORY(buf, global_buf, cluster, target_rank) + word;
 
     if (worker)
-        for (int s = 0; s < warmup * steps; s++) one_atomic(OP, p, id);
+        for (int s = 0; s < warmup * steps; s++) ATOMIC(p, id);
     cluster.sync();   // the workers start together
     const long long c0 = clock64();
     const unsigned long long t0 = globaltimer();
     if (worker)
-        for (int s = 0; s < steps; s++) one_atomic(OP, p, id);
+        for (int s = 0; s < steps; s++) ATOMIC(p, id);
     __syncthreads();   // the block is done when its slowest thread is
     if (threadIdx.x == 0) {
         out[rank].cycles = clock64() - c0;
@@ -148,48 +158,47 @@ __device__ __forceinline__ void throughput(unsigned* global_buf, unsigned word, 
     for (int i = threadIdx.x; i < SBUF; i += blockDim.x) dump[rank * SBUF + i] = buf[i];
 }
 
-template <int TARGET, int OP>
-__global__ void atomic_throughput_intra(unsigned* global_buf, int contention, int steps,
-                                        int warmup, BlockTime* out, unsigned* dump) {
-    const int r = (int)cg::this_cluster().block_rank() - FIRST_WORKER;
-    // smem: every worker has its own buffer, so the word only depends on my thread
-    const unsigned word = TARGET == SMEM ? threadIdx.x / contention
-                                         : word_intra(r, threadIdx.x, blockDim.x, contention);
-    throughput<TARGET, OP>(global_buf, word, steps, warmup, out, dump);
+// Each worker on its own shared memory: the word only depends on my thread.
+template <Atomic ATOMIC>
+__global__ void atomic_throughput_smem(unsigned* global_buf, int target_rank, int contention,
+                                       int steps, int warmup, BlockTime* out, unsigned* dump) {
+    const unsigned word = threadIdx.x / contention;
+    throughput<own_smem, ATOMIC>(global_buf, target_rank, word, steps, warmup, out, dump);
 }
 
-template <int TARGET, int OP>
-__global__ void atomic_throughput_inter(unsigned* global_buf, int contention, int steps,
-                                        int warmup, BlockTime* out, unsigned* dump) {
+template <Memory MEMORY, Atomic ATOMIC>
+__global__ void atomic_throughput_intra(unsigned* global_buf, int target_rank, int contention,
+                                        int steps, int warmup, BlockTime* out, unsigned* dump) {
+    const int r = (int)cg::this_cluster().block_rank() - FIRST_WORKER;
+    const unsigned word = word_intra(r, threadIdx.x, blockDim.x, contention);
+    throughput<MEMORY, ATOMIC>(global_buf, target_rank, word, steps, warmup, out, dump);
+}
+
+template <Memory MEMORY, Atomic ATOMIC>
+__global__ void atomic_throughput_inter(unsigned* global_buf, int target_rank, int contention,
+                                        int steps, int warmup, BlockTime* out, unsigned* dump) {
     const int r = (int)cg::this_cluster().block_rank() - FIRST_WORKER;
     const unsigned word = word_inter(r, threadIdx.x, blockDim.x, contention);
-    throughput<TARGET, OP>(global_buf, word, steps, warmup, out, dump);
+    throughput<MEMORY, ATOMIC>(global_buf, target_rank, word, steps, warmup, out, dump);
 }
 
-// Latency: thread 0 of rank 0 runs a chain on word 0 of its own shared memory
-// (MEMORY 0), of rank `rank_target`'s (1, DSMEM) or of the global buffer (2).
-// MEMORY is a template parameter so that for smem the compiler sees a
-// shared-memory pointer and emits ATOMS.
-template <int MEMORY, int OP>
-__global__ void atomic_latency(unsigned* global_buf, int rank_target, int steps, int warmup,
+// Latency: thread 0 of rank 0 runs a chain on word 0 of the buffer MEMORY
+// gives (remote_smem: rank `target_rank`'s).
+template <Memory MEMORY, Chain CHAIN>
+__global__ void atomic_latency(unsigned* global_buf, int target_rank, int steps, int warmup,
                                BlockTime* out) {
     __shared__ unsigned buf[SBUF];
     cg::cluster_group cluster = cg::this_cluster();
     if (threadIdx.x == 0) buf[0] = 0;
     cluster.sync();
     if (cluster.block_rank() == 0 && threadIdx.x == 0) {
-        unsigned* c;
-        if (MEMORY == 0)      c = buf;
-        else if (MEMORY == 1) c = cluster.map_shared_rank(buf, rank_target);
-        else                  c = global_buf;
+        unsigned* c = MEMORY(buf, global_buf, cluster, target_rank);
         unsigned i = 0;   // word 0 holds 0, and every atomic leaves it 0
         long long c0 = 0;
         unsigned long long t0 = 0;
         for (int s = 0; s < (warmup + 1) * steps; s++) {
             if (s == warmup * steps) { c0 = clock64(); t0 = globaltimer(); }
-            if (OP == OR)       i = atomicOr(&c[i], 0u);
-            else if (OP == ADD) i = atomicAdd(&c[i], 0u);
-            else                i = atomicCAS(&c[i], 0u, 0u);
+            i = CHAIN(&c[i]);
         }
         out[0].cycles = clock64() - c0;
         out[0].start_ns = t0;
@@ -199,6 +208,15 @@ __global__ void atomic_latency(unsigned* global_buf, int rank_target, int steps,
 }
 
 // ------------------------------------------------------------ host
+
+// The buffer the atomics of `target` go to: a rank's shared memory, or -1 =
+// the global buffer. smem: each worker its own.
+static int buffer_of(int target, int rank) {
+    if (target == SMEM)         return rank;
+    if (target == DSMEM_RANK0)  return 0;
+    if (target == DSMEM_RANK10) return 10;
+    return -1;
+}
 
 // The host replay of one throughput run: what every word must hold.
 static bool check(int target, int op, int scope, int contention, int block_size,
@@ -301,34 +319,40 @@ int main(int argc, char** argv) {
     }
 
     // ---- the kernel for this scope / target / op
-    using ThroughputKernel = void (*)(unsigned*, int, int, int, BlockTime*, unsigned*);
-    static const ThroughputKernel intra_kernels[4][3] = {
-        {atomic_throughput_intra<SMEM, OR>, atomic_throughput_intra<SMEM, ADD>,
-         atomic_throughput_intra<SMEM, CAS>},
-        {atomic_throughput_intra<DSMEM_RANK0, OR>, atomic_throughput_intra<DSMEM_RANK0, ADD>,
-         atomic_throughput_intra<DSMEM_RANK0, CAS>},
-        {atomic_throughput_intra<DSMEM_RANK10, OR>, atomic_throughput_intra<DSMEM_RANK10, ADD>,
-         atomic_throughput_intra<DSMEM_RANK10, CAS>},
-        {atomic_throughput_intra<GLOBAL, OR>, atomic_throughput_intra<GLOBAL, ADD>,
-         atomic_throughput_intra<GLOBAL, CAS>},
+    using ThroughputKernel = void (*)(unsigned*, int, int, int, int, BlockTime*, unsigned*);
+    static const ThroughputKernel smem_kernels[3] = {
+        atomic_throughput_smem<atomic_or>, atomic_throughput_smem<atomic_add>,
+        atomic_throughput_smem<atomic_cas>};
+    static const ThroughputKernel intra_kernels[2][3] = {   // [dsmem, global][op]
+        {atomic_throughput_intra<remote_smem, atomic_or>, atomic_throughput_intra<remote_smem, atomic_add>,
+         atomic_throughput_intra<remote_smem, atomic_cas>},
+        {atomic_throughput_intra<global_mem, atomic_or>, atomic_throughput_intra<global_mem, atomic_add>,
+         atomic_throughput_intra<global_mem, atomic_cas>},
     };
-    static const ThroughputKernel inter_kernels[4][3] = {
-        {nullptr, nullptr, nullptr},   // smem: no inter-block contention
-        {atomic_throughput_inter<DSMEM_RANK0, OR>, atomic_throughput_inter<DSMEM_RANK0, ADD>,
-         atomic_throughput_inter<DSMEM_RANK0, CAS>},
-        {atomic_throughput_inter<DSMEM_RANK10, OR>, atomic_throughput_inter<DSMEM_RANK10, ADD>,
-         atomic_throughput_inter<DSMEM_RANK10, CAS>},
-        {atomic_throughput_inter<GLOBAL, OR>, atomic_throughput_inter<GLOBAL, ADD>,
-         atomic_throughput_inter<GLOBAL, CAS>},
+    static const ThroughputKernel inter_kernels[2][3] = {   // [dsmem, global][op]
+        {atomic_throughput_inter<remote_smem, atomic_or>, atomic_throughput_inter<remote_smem, atomic_add>,
+         atomic_throughput_inter<remote_smem, atomic_cas>},
+        {atomic_throughput_inter<global_mem, atomic_or>, atomic_throughput_inter<global_mem, atomic_add>,
+         atomic_throughput_inter<global_mem, atomic_cas>},
     };
     using LatencyKernel = void (*)(unsigned*, int, int, int, BlockTime*);
-    static const LatencyKernel latency_kernels[3][3] = {
-        {atomic_latency<0, OR>, atomic_latency<0, ADD>, atomic_latency<0, CAS>},
-        {atomic_latency<1, OR>, atomic_latency<1, ADD>, atomic_latency<1, CAS>},
-        {atomic_latency<2, OR>, atomic_latency<2, ADD>, atomic_latency<2, CAS>},
+    static const LatencyKernel latency_kernels[3][3] = {   // [smem, dsmem, global][op]
+        {atomic_latency<own_smem, chain_or>, atomic_latency<own_smem, chain_add>,
+         atomic_latency<own_smem, chain_cas>},
+        {atomic_latency<remote_smem, chain_or>, atomic_latency<remote_smem, chain_add>,
+         atomic_latency<remote_smem, chain_cas>},
+        {atomic_latency<global_mem, chain_or>, atomic_latency<global_mem, chain_add>,
+         atomic_latency<global_mem, chain_cas>},
     };
-    const ThroughputKernel throughput_kernel =
-        throughput ? (scope == INTRA ? intra_kernels : inter_kernels)[target][op] : nullptr;
+    ThroughputKernel throughput_kernel = nullptr;
+    int target_rank = a.distance;   // latency: the dsmem rank
+    if (throughput) {
+        const int memory = (target == GLOBAL) ? 1 : 0;   // row of intra_kernels / inter_kernels
+        target_rank = (target == DSMEM_RANK10) ? 10 : 0;
+        throughput_kernel = (target == SMEM)   ? smem_kernels[op]
+                          : (scope == INTRA)   ? intra_kernels[memory][op]
+                                               : inter_kernels[memory][op];
+    }
     const void* kernel = throughput ? (const void*)throughput_kernel
                                     : (const void*)latency_kernels[target][op];
 
@@ -371,11 +395,11 @@ int main(int argc, char** argv) {
         CUDA_CHECK(cudaMemset(global_buf, 0, SBUF * sizeof(unsigned)));
         CUDA_CHECK(cudaMemset(out, 0, CLUSTER_SIZE * sizeof(BlockTime)));
         if (throughput)
-            CUDA_CHECK(cudaLaunchKernelEx(&cfg, throughput_kernel, global_buf, contention, a.steps,
-                                          a.warmup, out, dump));
+            CUDA_CHECK(cudaLaunchKernelEx(&cfg, throughput_kernel, global_buf, target_rank, contention,
+                                          a.steps, a.warmup, out, dump));
         else
             CUDA_CHECK(cudaLaunchKernelEx(&cfg, latency_kernels[target][op], global_buf,
-                                          a.distance, a.steps, a.warmup, out));
+                                          target_rank, a.steps, a.warmup, out));
         CUDA_CHECK(cudaDeviceSynchronize());
 
         if (throughput) {   // ---- correctness, then the time over the workers

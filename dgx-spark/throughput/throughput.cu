@@ -55,9 +55,10 @@
 //
 // BUSY TIME
 //   Each block also records how long it spent in step 2, i.e. until it
-//   reached the final barrier. With an unbalanced pattern the heavy senders
-//   arrive last and the others wait for them: max busy / mean busy shows how
-//   much of the exchange is imbalance.
+//   reached the final barrier, in its SM's clock cycles. The CSV has one row
+//   per block per repetition, so every block can be looked at: with an
+//   unbalanced pattern the heavy senders arrive last and the others wait for
+//   them, and a block that takes long for few bytes stands out.
 //
 // CORRECTNESS FIRST
 //   As in transfer.cu, one untimed launch fills every message with a pattern
@@ -87,7 +88,7 @@ namespace cg = cooperative_groups;
 
 enum { DSMEM_PULL, DSMEM_PUSH, DSMEM_BULK, GMEM_LDST, GMEM_TMA, CLUSTER_SYNC };   // --method
 
-constexpr int MAX_RANKS = 16;   // table size; GB10 clusters stop at 12
+constexpr int MAX_RANKS = 12;   // table size; GB10 clusters stop at 12
 constexpr int WORD = 16;        // bytes per uint4: the unit every message is counted in
 
 // ------------------------------------------------------------ memory layout
@@ -137,7 +138,7 @@ struct Params {
     uint4* staging;        // gmem-*: one send area per rank, in global memory
     unsigned long long* ns;        // the whole run, timed on rank 0 ...
     long long* cycles;             // ... in ns and in its SM's clock cycles
-    unsigned long long* busy_ns;   // per rank: total time spent moving bytes
+    long long* busy_cycles;        // per rank: total time spent moving bytes
     unsigned* sm_of_rank;
     Errors* errors;
 };
@@ -235,11 +236,15 @@ struct Block {
     const Params* params;
 
     // The copy plan of the methods whose threads copy (dsmem-push, dsmem-pull
-    // and the second half of gmem-ldst). One side of every copy is my own
-    // area, where message k is the words [copy_start[k], copy_start[k+1]);
-    // the far side of message k starts at far_end[k]: the receiver's receive
-    // area (push), or the sender's send area in DSMEM (pull) or in global
-    // memory (gmem-ldst). Worked out once, before the first round (see a2av()).
+    // and the second half of gmem-ldst): my NON-EMPTY messages only, `copies`
+    // of them. One side of every copy is my own area, where copy c is the
+    // words [copy_start[c], copy_start[c+1]); the far side of copy c starts at
+    // far_end[c]: the receiver's receive area (push), or the sender's send
+    // area in DSMEM (pull) or in global memory (gmem-ldst). Worked out once,
+    // before the first round (see a2av()). Empty messages are left out
+    // because the copy loops walk the plan one entry at a time: walking past
+    // 10 empty messages to reach the only full one cost ~550 cycles.
+    int copies;
     const int* copy_start;
     uint4* const* far_end;
 
@@ -288,7 +293,7 @@ constexpr int LOADS_IN_FLIGHT = 4;
 // wherever far_end[k] says, into my receive area.
 __device__ void gather_messages(const Block& b) {
     const int* start = b.copy_start;
-    const int total = start[b.p];
+    const int total = start[b.copies];
     int k = -1, end = 0;   // the message the thread is in, and where it ends
     const uint4* from = nullptr;
     for (int first = threadIdx.x; first < total; first += LOADS_IN_FLIGHT * blockDim.x) {
@@ -318,7 +323,7 @@ __device__ void scatter_messages(const Block& b) {
     const int* start = b.copy_start;
     int k = -1, end = 0;
     uint4* to = nullptr;
-    for (int w = threadIdx.x; w < start[b.p]; w += blockDim.x) {
+    for (int w = threadIdx.x; w < start[b.copies]; w += blockDim.x) {
         while (w >= end) {
             k++;
             end = start[k + 1];
@@ -426,11 +431,20 @@ __device__ void check_recv_area(const Block& b, int round) {
 // ------------------------------------------------------------ the kernel
 
 // __launch_bounds__(1024): keep the register count low enough for --block-size 1024.
+// Rank r's shared memory at `offset`. My own goes through a plain pointer: a
+// block's message to itself is a local copy, not a trip through DSMEM.
+__device__ uint4* area_of(unsigned char* smem, cg::cluster_group& cluster, int rank, int r,
+                          int offset) {
+    return (uint4*)((r == rank ? smem : cluster.map_shared_rank(smem, r)) + offset);
+}
+
 __global__ void __launch_bounds__(1024) a2av(Params params) {
     extern __shared__ __align__(128) unsigned char smem[];
     __shared__ int out_start[MAX_RANKS][MAX_RANKS + 1];
     __shared__ int in_start[MAX_RANKS][MAX_RANKS + 1];
+    __shared__ int copy_start[MAX_RANKS + 1];
     __shared__ uint4* far_end[MAX_RANKS];
+    __shared__ int copies;
 
     cg::cluster_group cluster = cg::this_cluster();
     const Layout& layout = params.layout;
@@ -460,44 +474,52 @@ __global__ void __launch_bounds__(1024) a2av(Params params) {
     b.recv_area = (uint4*)(smem + recv_offset);
     b.my_addr = shared_addr(smem);
     b.params = &params;
-    b.copy_start = (params.method == DSMEM_PUSH) ? out_start[rank] : in_start[rank];
+    b.copy_start = copy_start;
     b.far_end = far_end;
 
-    // The copy plan: thread k works out where the far side of message k is.
-    // My own areas go through a plain pointer: a block's message to itself
-    // is a local copy, not a trip through DSMEM.
-    auto area_of = [&](int r, int offset) {
-        return (uint4*)((r == rank ? smem : cluster.map_shared_rank(smem, r)) + offset);
-    };
-    if (threadIdx.x < p) {
-        const int k = threadIdx.x;
-        if (params.method == DSMEM_PUSH) {   // my message k -> its receiver's receive area
-            const int dst = (rank + k) % p;
-            far_end[k] = area_of(dst, recv_offset) + b.recv_pos(rank, dst);
-        } else {   // my incoming message k <- its sender's send area, in DSMEM or global memory
-            const int src = (rank + k) % p;
-            uint4* sender_area = (params.method == GMEM_LDST) ? b.staging(src)
-                                                              : area_of(src, SEND_OFFSET);
-            far_end[k] = sender_area + b.send_pos(src, rank);
+    // The copy plan (see Block): thread 0 lists my non-empty messages and
+    // where the far side of each one is. My own areas go through a plain
+    // pointer: a block's message to itself is a local copy, not a trip
+    // through DSMEM.
+    if (threadIdx.x == 0) {
+        const int* start = (params.method == DSMEM_PUSH) ? out_start[rank] : in_start[rank];
+        int c = 0;
+        for (int k = 0; k < p; k++) {
+            if (start[k + 1] == start[k]) continue;   // empty: nothing to copy
+            copy_start[c] = start[k];
+            if (params.method == DSMEM_PUSH) {   // my message k -> its receiver's receive area
+                const int dst = (rank + k) % p;
+                far_end[c] = area_of(smem, cluster, rank, dst, recv_offset) + b.recv_pos(rank, dst);
+            } else {   // my incoming message k <- its sender's send area, in DSMEM or global memory
+                const int src = (rank + k) % p;
+                uint4* sender_area = (params.method == GMEM_LDST)
+                                         ? b.staging(src)
+                                         : area_of(smem, cluster, rank, src, SEND_OFFSET);
+                far_end[c] = sender_area + b.send_pos(src, rank);
+            }
+            c++;
         }
+        copy_start[c] = start[p];
+        copies = c;
     }
     __syncthreads();
+    b.copies = copies;
 
     if (!params.verify) fill_send_area(b, 0);   // defined contents, never checked
 
     const int total_rounds = params.warmup_rounds + params.rounds;
-    unsigned long long t0 = 0, busy = 0;
-    long long c0 = 0;
+    unsigned long long t0 = 0;
+    long long c0 = 0, busy = 0;
     for (int round = 0; round < total_rounds; round++) {
         const bool timed = round >= params.warmup_rounds;
         if (params.verify) fill_send_area(b, round);   // "produce" this round's messages
         if (round == params.warmup_rounds) { t0 = globaltimer(); c0 = clock64(); }
 
         cluster.sync();                     // 1. data ready, receive areas free
-        const unsigned long long start = globaltimer();
+        const long long start = clock64();
         exchange(b, cluster, round);        // 2. move the bytes
         __syncthreads();                    //    the whole block is done
-        if (timed) busy += globaltimer() - start;
+        if (timed) busy += clock64() - start;
         cluster.sync();                     // 3. everything delivered
 
         if (params.verify) check_recv_area(b, round);   // "consume" them
@@ -506,7 +528,7 @@ __global__ void __launch_bounds__(1024) a2av(Params params) {
     const long long c1 = clock64();
 
     if (threadIdx.x == 0) {
-        params.busy_ns[rank] = busy;
+        params.busy_cycles[rank] = busy;
         if (rank == 0) { *params.ns = t1 - t0; *params.cycles = c1 - c0; }
     }
     // A block's shared memory disappears when it exits: nobody leaves while
@@ -578,7 +600,8 @@ static Pattern read_trace(const char* path, size_t avg_msgsize) {
 
     if (pat.p == 0) {
         fprintf(stderr, "a2av: %s has no lines for --avg-msgsize %zu. It has:", path, avg_msgsize);
-        for (auto& [size, n] : lines_per_size) fprintf(stderr, " %zu", size);
+        for (const std::pair<const size_t, int>& entry : lines_per_size)
+            fprintf(stderr, " %zu", entry.first);
         fprintf(stderr, "\n");
         exit(1);
     }
@@ -600,16 +623,20 @@ static std::string distribution_of(const char* path) {
     return name.substr(first + 1, last - first - 1);
 }
 
+// Words of the message src -> dst, rounded up.
+static int words(const Pattern& pat, int src, int dst) {
+    return (int)((pat.bytes[src][dst] + WORD - 1) / WORD);
+}
+
 // Turn the byte counts into the rotated layout (see Layout).
 static Layout make_layout(const Pattern& pat) {
     Layout l = {};
     const int p = pat.p;
     l.p = p;
-    auto words = [&](int src, int dst) { return (int)((pat.bytes[src][dst] + WORD - 1) / WORD); };
     for (int b = 0; b < p; b++) {
         for (int k = 0; k < p; k++) {
-            l.out_start[b][k + 1] = l.out_start[b][k] + words(b, (b + k) % p);
-            l.in_start[b][k + 1] = l.in_start[b][k] + words((b + k) % p, b);
+            l.out_start[b][k + 1] = l.out_start[b][k] + words(pat, b, (b + k) % p);
+            l.in_start[b][k + 1] = l.in_start[b][k] + words(pat, (b + k) % p, b);
         }
         l.send_area_words = std::max(l.send_area_words, l.out_start[b][p]);
         l.recv_area_words = std::max(l.recv_area_words, l.in_start[b][p]);
@@ -618,6 +645,21 @@ static Layout make_layout(const Pattern& pat) {
 }
 
 // ------------------------------------------------------------ host: main
+
+// One launch of a2av (`rounds` exchanges); exits on a deadlock.
+static void launch(Params& params, const cudaLaunchConfig_t& cfg, int rounds, int warmup_rounds,
+                   int verify) {
+    params.rounds = rounds;
+    params.warmup_rounds = warmup_rounds;
+    params.verify = verify;
+    *params.errors = Errors{};
+    CUDA_CHECK(cudaLaunchKernelEx(&cfg, a2av, params));
+    CUDA_CHECK(cudaDeviceSynchronize());
+    if (params.errors->timed_out) {
+        fprintf(stderr, "a2av: %s timed out (deadlock?)\n", TRANSFER_METHOD[params.method]);
+        exit(1);
+    }
+}
 
 int main(int argc, char** argv) {
     Args a;
@@ -687,8 +729,7 @@ int main(int argc, char** argv) {
     print_header(argc, argv, a, 0, extra,
                  "benchmark,method,distribution,nranks,avg_msgsize,total_bytes,max_sent_bytes,"
                  "max_received_bytes,block_size,rounds,seed,rep,ns,cycles,ns_per_exchange,"
-                 "cycles_per_exchange,gbps,"
-                 "busy_max_ns,busy_mean_ns\n");
+                 "cycles_per_exchange,gbps,rank,sm,sent_bytes,received_bytes,busy_cycles\n");
 
     // ---- memory the kernel needs
     Params params = {};
@@ -699,7 +740,7 @@ int main(int argc, char** argv) {
     CUDA_CHECK(cudaMemset(params.staging, 0, staging_bytes));
     CUDA_CHECK(cudaMallocManaged(&params.ns, sizeof(unsigned long long)));
     CUDA_CHECK(cudaMallocManaged(&params.cycles, sizeof(long long)));
-    CUDA_CHECK(cudaMallocManaged(&params.busy_ns, p * sizeof(unsigned long long)));
+    CUDA_CHECK(cudaMallocManaged(&params.busy_cycles, p * sizeof(long long)));
     CUDA_CHECK(cudaMallocManaged(&params.sm_of_rank, p * sizeof(unsigned)));
     CUDA_CHECK(cudaMallocManaged(&params.errors, sizeof(Errors)));
 
@@ -719,21 +760,8 @@ int main(int argc, char** argv) {
     cfg.attrs = &attr;
     cfg.numAttrs = 1;
 
-    auto launch = [&](int rounds, int warmup_rounds, int verify) {
-        params.rounds = rounds;
-        params.warmup_rounds = warmup_rounds;
-        params.verify = verify;
-        *params.errors = Errors{};
-        CUDA_CHECK(cudaLaunchKernelEx(&cfg, a2av, params));
-        CUDA_CHECK(cudaDeviceSynchronize());
-        if (params.errors->timed_out) {
-            fprintf(stderr, "a2av: %s timed out (deadlock?)\n", TRANSFER_METHOD[a.method]);
-            exit(1);
-        }
-    };
-
     // ---- 1. correctness: every message filled and checked (cluster-sync moves nothing)
-    if (a.method != CLUSTER_SYNC) launch(std::min(a.rounds, 64), 0, 1);
+    if (a.method != CLUSTER_SYNC) launch(params, cfg, std::min(a.rounds, 64), 0, 1);
     if (params.errors->wrong_words) {
         fprintf(stderr, "a2av: %s: %u WRONG words, first in round %u, rank %u, word %u\n",
                 TRANSFER_METHOD[a.method], params.errors->wrong_words,
@@ -742,22 +770,24 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // ---- 2. timing: one CSV row per repetition
+    // ---- 2. timing: one CSV row per block per repetition
     std::vector<double> ns_per_exchange, gbps, imbalance;
     for (int rep = 0; rep < a.reps; rep++) {
-        launch(a.rounds, a.warmup * a.rounds, 0);
+        launch(params, cfg, a.rounds, a.warmup * a.rounds, 0);
         const double ns = (double)*params.ns / a.rounds;
         const double g = (a.method == CLUSTER_SYNC) ? 0 : total_bytes / ns;   // bytes per ns = GB/s
         double busy_max = 0, busy_sum = 0;
-        for (int r = 0; r < p; r++) {
-            const double busy = (double)params.busy_ns[r] / a.rounds;
+        for (int r = 0; r < p; r++) {   // the exchange's columns, then this block's
+            const double busy = (double)params.busy_cycles[r] / a.rounds;
             busy_max = std::max(busy_max, busy);
             busy_sum += busy;
+            printf("a2av,%s,%s,%d,%zu,%lld,%lld,%lld,%d,%d,%d,%d,%llu,%lld,%.3f,%.2f,%.4f,"
+                   "%d,%u,%lld,%lld,%.2f\n",
+                   TRANSFER_METHOD[a.method], dist.c_str(), p, a.avg_msgsize, total_bytes, max_sent,
+                   max_received, a.block_size, a.rounds, a.seed, rep, *params.ns, *params.cycles, ns,
+                   (double)*params.cycles / a.rounds, g, r, params.sm_of_rank[r], sent[r],
+                   received[r], busy);
         }
-        printf("a2av,%s,%s,%d,%zu,%lld,%lld,%lld,%d,%d,%d,%d,%llu,%lld,%.3f,%.2f,%.4f,%.3f,%.3f\n",
-               TRANSFER_METHOD[a.method], dist.c_str(), p, a.avg_msgsize, total_bytes, max_sent,
-               max_received, a.block_size, a.rounds, a.seed, rep, *params.ns, *params.cycles, ns,
-               (double)*params.cycles / a.rounds, g, busy_max, busy_sum / p);
         ns_per_exchange.push_back(ns);
         gbps.push_back(g);
         imbalance.push_back(busy_max / (busy_sum / p));
@@ -766,10 +796,10 @@ int main(int argc, char** argv) {
     // ---- human-readable summary on stderr
     fprintf(stderr, "a2av %s, %s, %d ranks, avg_msgsize %zu: %lld B per exchange, verified\n",
             TRANSFER_METHOD[a.method], dist.c_str(), p, a.avg_msgsize, total_bytes);
-    fprintf(stderr, "  rank |  SM | sends (B) | receives (B) | busy ns (last rep)\n");
+    fprintf(stderr, "  rank |  SM | sends (B) | receives (B) | busy cycles (last rep)\n");
     for (int r = 0; r < p; r++)
         fprintf(stderr, "  %4d | %3u | %9lld | %12lld | %8.0f\n", r, params.sm_of_rank[r], sent[r],
-                received[r], (double)params.busy_ns[r] / a.rounds);
+                received[r], (double)params.busy_cycles[r] / a.rounds);
     print_stats_line("ns per exchange", ns_per_exchange);
     print_stats_line("GB/s", gbps);
     print_stats_line("busy max/mean", imbalance);
@@ -777,7 +807,7 @@ int main(int argc, char** argv) {
     CUDA_CHECK(cudaFree(params.staging));
     CUDA_CHECK(cudaFree(params.ns));
     CUDA_CHECK(cudaFree(params.cycles));
-    CUDA_CHECK(cudaFree(params.busy_ns));
+    CUDA_CHECK(cudaFree(params.busy_cycles));
     CUDA_CHECK(cudaFree(params.sm_of_rank));
     CUDA_CHECK(cudaFree(params.errors));
     return 0;

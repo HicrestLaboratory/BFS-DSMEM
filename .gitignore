@@ -27,5 +27,6 @@ slides/slides.out
 slides/slides.run.xml
 slides/slides.snm
 slides/slides.toc
+slides/_minted
 cuda_micro_bench/
 build/

@@ -763,18 +763,624 @@
   \end{enumerate}
 \end{frame}
 
-\end{document}
+\begin{frame}[fragile]{Barriers: how we measure them naively}
+  \vspace{0.4em}
+  \footnotesize
+  \begin{columns}[c,onlytextwidth]
+    \begin{column}{0.48\textwidth}
+\begin{minted}[fontsize=\footnotesize, frame=lines, framesep=2mm]{cuda}
+__global__ void barrier() {
+  long long start = clock64();
+  barrier.sync();
+  long long end = clock64();
+  arrive_time[blockIdx.x][threadIdx.x]
+      = end - start;
+}
+\end{minted}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{itemize}\itemsep4pt
+        \item \textbf{every thread} times its own wait at the barrier
+        \item one sample per thread $\Rightarrow$ a distribution, not one number
+        \item \texttt{barrier} is one of four scopes:
+          \begin{itemize}\scriptsize\itemsep0pt
+            \item \texttt{\_\_syncthreads()}: one block
+            \item \texttt{cluster.sync()}: one cluster
+            \item cluster barrier with a \emph{relaxed} arrive
+            \item \texttt{grid.sync()}: the whole grid
+          \end{itemize}
+        \item 32--1024 threads per block; 2 and 12 blocks
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
 
-% \begin{column}{0.42\textwidth}
-%     \centering
-%     \begin{tikzpicture}[scale=0.42, every node/.style={font=\tiny}]
-%       \foreach \t/\w/\y in {20/0/5.0, 8/8/4.1, 16/12/3.2, 4/19/2.3, 12/24/1.4, 0/31/0.5} {
-%         \draw[fill=mygreen!30, draw=mygreen!80!black] (0,\y-0.24) rectangle (1.8,\y+0.24);
-%         \node at (0.9,\y) {TPC \t};
-%         \draw[myblue, thick] (1.8,\y) --
-%               node[pos=0.32, myred, font=\tiny, fill=white, inner sep=1pt] {\w} (4.9,2.75);
-%       }
-%       \draw[fill=myblue!25, draw=myblue!80!black, rounded corners] (4.9,2.15) rectangle (6.9,3.35);
-%       \node[align=center] at (5.9,2.75) {hub\\[-2pt]{\tiny $+\,149$}};
-%     \end{tikzpicture}
-%   \end{column}
+% ============================================================ barriers: naive results
+\begin{frame}{Naive: \texttt{\_\_syncthreads()}}
+  \centering
+  \includegraphics[width=0.94\linewidth,height=0.72\textheight,keepaspectratio]{images/barriers/plots-naive_syncthreads-one-block.png}
+
+  \vspace{0.2em}
+  {\footnotesize 6 cycles up to 256 threads, then 14 (512) and 49 (1024).}
+\end{frame}
+
+\begin{frame}{Naive: \texttt{cluster.sync()}}
+  \centering
+  \includegraphics[width=0.94\linewidth,height=0.72\textheight,keepaspectratio]{images/barriers/plots-naive_cluster-sync-one-cluster.png}
+
+  \vspace{0.2em}
+  {\footnotesize $\sim$472 cycles up to 256 threads; the same with 2 and 12 blocks.}
+\end{frame}
+
+\begin{frame}{Naive: cluster barrier, relaxed arrive}
+  \centering
+  \includegraphics[width=0.94\linewidth,height=0.72\textheight,keepaspectratio]{images/barriers/plots-naive_cluster-barrier-with-a-relaxed-arrive-one-cluster.png}
+
+  \vspace{0.2em}
+  {\footnotesize $\sim$190 cycles: less than half of \texttt{cluster.sync()}.}
+\end{frame}
+
+\begin{frame}{Naive: \texttt{grid.sync()}}
+  \centering
+  \includegraphics[width=0.94\linewidth,height=0.72\textheight,keepaspectratio]{images/barriers/plots-naive_grid-sync.png}
+
+  \vspace{0.2em}
+  {\footnotesize Median $\sim$133 cycles, \emph{less} than \texttt{cluster.sync()}, but whiskers up to $\sim$1300: suspicious.}
+\end{frame}
+
+% ============================================================ barriers: shared method
+\begin{frame}[fragile]{Barriers: how we measure them avoiding optimizations}
+  \vspace{0.4em}
+  \footnotesize
+  \begin{columns}[c,onlytextwidth]
+    \begin{column}{0.48\textwidth}
+\begin{minted}[fontsize=\footnotesize, frame=lines, framesep=2mm]{cuda}
+__global__ void barrier() {
+  __shared__ unsigned word;
+  long long start = clock64();
+  barrier.sync();
+  // read from word from shared memory;
+  long long end = clock64();
+  arrive_time[blockIdx.x][threadIdx.x]
+      = end - start;
+}
+\end{minted}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{itemize}\itemsep4pt
+        \item \textbf{every thread} times its own wait at the barrier
+        \item one sample per thread $\Rightarrow$ a distribution, not one number
+        \item \texttt{barrier} is one of four scopes:
+          \begin{itemize}\scriptsize\itemsep0pt
+            \item \texttt{\_\_syncthreads()}: one block
+            \item \texttt{cluster.sync()}: one cluster
+            \item cluster barrier with a \emph{relaxed} arrive
+            \item \texttt{grid.sync()}: the whole grid
+          \end{itemize}
+        \item 32--1024 threads per block; 2 and 12 blocks
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+% ============================================================ barriers: shared results
+\begin{frame}{With shared load: \texttt{\_\_syncthreads()}}
+  \centering
+  \includegraphics[width=0.94\linewidth,height=0.72\textheight,keepaspectratio]{images/barriers/plots-shared_syncthreads-one-block.png}
+
+  \vspace{0.2em}
+  {\footnotesize 51 cycles at 32 threads: the load itself, the barrier is free.}
+\end{frame}
+
+\begin{frame}{With shared load: \texttt{cluster.sync()}}
+  \centering
+  \includegraphics[width=0.94\linewidth,height=0.72\textheight,keepaspectratio]{images/barriers/plots-shared_cluster-sync-one-cluster.png}
+
+  \vspace{0.2em}
+  {\footnotesize $\sim$517 cycles: naive value $+$ the load ($\sim$50). The naive number was right.}
+\end{frame}
+
+\begin{frame}{With shared load: cluster barrier, relaxed arrive}
+  \centering
+  \includegraphics[width=0.94\linewidth,height=0.72\textheight,keepaspectratio]{images/barriers/plots-shared_cluster-barrier-with-a-relaxed-arrive-one-cluster.png}
+
+  \vspace{0.2em}
+  {\footnotesize $\sim$235 cycles: again naive $+$ the load.}
+\end{frame}
+
+\begin{frame}{With shared load: \texttt{grid.sync()}}
+  \centering
+  \includegraphics[width=0.94\linewidth,height=0.72\textheight,keepaspectratio]{images/barriers/plots-shared_grid-sync.png}
+
+  \vspace{0.2em}
+  {\footnotesize $\sim$1300 cycles for \emph{every} thread, not 133: the naive \texttt{grid.sync()} was wrong.}
+\end{frame}
+
+% ============================================================ barriers: thread 0
+\begin{frame}{A closer look: only warp 0 is right}
+  \vspace{0.4em}
+  \footnotesize
+  Looking at the naive \texttt{grid.sync()} warp by warp:
+  \begin{itemize}\itemsep4pt
+    \item \textbf{warp 0} always measures $\sim$1250--1300 cycles;
+    \item \textbf{all the other warps} measure $\sim$133 cycles, although they wait just as long.
+  \end{itemize}
+
+  \vspace{0.3em}
+  Probably the barrier is \textbf{not strictly blocking} when it does not have to be: it compiles to
+  \texttt{BAR.SYNC.DEFER\_BLOCKING}, so a warp is stopped a few instructions \emph{after} the
+  barrier, and a \texttt{clock64()} read (not a memory access) can slip in before the wait is over.
+
+  \vspace{0.3em}
+  Warp 0 does the work of \texttt{grid.sync()} (the atomic in global memory and the spin on it),
+  so its clock read comes after the barrier is really over.
+
+  \vspace{0.5em}
+  $\Rightarrow$ measure the naive way, but keep \textbf{only thread 0 of each block}:
+  no shared load, so no extra $\sim$50 cycles.
+\end{frame}
+
+\begin{frame}{Thread 0 only: \texttt{\_\_syncthreads()}}
+  \centering
+  \includegraphics[width=0.94\linewidth,height=0.72\textheight,keepaspectratio]{images/barriers/plots_syncthreads-one-block.png}
+
+  \vspace{0.2em}
+  {\footnotesize 6 cycles up to 256 threads, 18 (512), 59 (1024): same picture as the naive one.}
+\end{frame}
+
+\begin{frame}{Thread 0 only: \texttt{cluster.sync()}}
+  \centering
+  \includegraphics[width=0.94\linewidth,height=0.72\textheight,keepaspectratio]{images/barriers/plots_cluster-sync-one-cluster.png}
+
+  \vspace{0.2em}
+  {\footnotesize $\sim$471 cycles: identical to the naive median.}
+\end{frame}
+
+\begin{frame}{Thread 0 only: cluster barrier, relaxed arrive}
+  \centering
+  \includegraphics[width=0.94\linewidth,height=0.72\textheight,keepaspectratio]{images/barriers/plots_cluster-barrier-with-a-relaxed-arrive-one-cluster.png}
+
+  \vspace{0.2em}
+  {\footnotesize $\sim$190 cycles: identical to the naive median.}
+\end{frame}
+
+\begin{frame}{Thread 0 only: \texttt{grid.sync()}}
+  \centering
+  \includegraphics[width=0.94\linewidth,height=0.72\textheight,keepaspectratio]{images/barriers/plots_grid-sync.png}
+
+  \vspace{0.2em}
+  {\footnotesize $\sim$1250--1320 cycles: the real cost, without the $\sim$50 cycles of the shared load.}
+\end{frame}
+
+% ============================================================ barriers: paper
+\begin{frame}{Comparison: \emph{Benchmarking Thread Block Clusters}}
+  \centering
+  \includegraphics[width=\linewidth,height=0.6\textheight,keepaspectratio]{images/barriers/plots_paper.png}
+
+  \raggedright
+  \scriptsize
+  The authors measured on an \textbf{H100 PCIe} (114 SMs); we measure on GB10 (48 SMs).
+  \texttt{cluster.sync()}: $\sim$1100--1300 cycles on H100 vs $\sim$470 here;
+  \texttt{grid.sync()}: $\sim$2150--2250 vs $\sim$1250--1320 here
+  $\Rightarrow$ roughly \textbf{half the cycles} on the smaller GPU.
+\end{frame}
+
+% ============================================================ atomics: latency method
+\begin{frame}[fragile]{Atomics: latency}
+  \vspace{0.2em}
+  \footnotesize
+  \texttt{atomicAdd} vs \texttt{atomicOr} vs \texttt{atomicCAS}
+
+  \begin{columns}[c,onlytextwidth]
+    \begin{column}{0.66\textwidth}
+\begin{minted}[fontsize=\tiny, frame=lines, framesep=1.5mm]{cuda}
+__shared__ unsigned buf[SBUF];
+cg::cluster_group cluster = cg::this_cluster();
+if (cluster.block_rank() == 0 && threadIdx.x == 0) {
+  // MEMORY: own_smem | remote_smem | global_mem
+  unsigned* c = MEMORY(buf, global_buf, cluster, target_rank);
+  unsigned i = 0;   // word 0 holds 0, and every atomic leaves it 0
+  long long start = clock64();
+  for (int s = 0; s < steps; s++) {
+    i = CHAIN(&c[i]);   // chain_or | chain_add | chain_cas
+  }
+  long long cycles = clock64() - start;
+}
+cluster.sync();
+\end{minted}
+    \end{column}
+    \begin{column}{0.32\textwidth}
+      \scriptsize
+      \begin{itemize}\itemsep3pt
+        \item \textbf{one thread}, a chain of dependent atomics: each works on the word the
+              previous one returned $\Rightarrow$ pure latency
+        \item own \textbf{smem}, a peer's \textbf{DSMEM}, \textbf{global} (L2)
+        \item DSMEM: rank 0 against every target rank 1--11
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Latency: \texttt{atomicAdd}}
+  \centering
+  \includegraphics[width=0.96\linewidth,height=0.72\textheight,keepaspectratio]{images/atomics/plots_atomicadd-latency.png}
+
+  \vspace{0.2em}
+  {\footnotesize smem 38, DSMEM 199, global 339 cycles. DSMEM depends on the target TPC, like a plain load (187--218).}
+\end{frame}
+
+\begin{frame}{Latency: \texttt{atomicOr}}
+  \centering
+  \includegraphics[width=0.96\linewidth,height=0.72\textheight,keepaspectratio]{images/atomics/plots_atomicor-latency.png}
+
+  \vspace{0.2em}
+  {\footnotesize Identical to \texttt{atomicAdd}: 38 / 199 / 339 cycles.}
+\end{frame}
+
+\begin{frame}{Latency: \texttt{atomicCAS}}
+  \centering
+  \includegraphics[width=0.96\linewidth,height=0.72\textheight,keepaspectratio]{images/atomics/plots_atomiccas-latency.png}
+
+  \vspace{0.2em}
+  {\footnotesize About 5 cycles more everywhere: 44 / 204 / 344 cycles.}
+\end{frame}
+
+% ============================================================ atomics: throughput method
+\begin{frame}{Atomics: throughput under contention}
+  \vspace{-0.5em}
+  \footnotesize
+  One cluster of 12 blocks. \textbf{8 worker blocks $\times$ 512 threads} $=$ 4096 threads, each
+  doing many atomics on a 16\,KiB buffer.
+  \begin{itemize}\itemsep1pt
+    \item \textbf{Contention $x$}: $x$ threads share each word ($x = 1$: no collision,
+          $x = 4096$: everybody on one word).
+    \item \textbf{Who collides:}
+      \begin{itemize}\scriptsize\itemsep0pt
+        \item \emph{Intra-block} (solid): the $x$ threads that share a word are neighbours
+              in one block, lanes of the same warp up to $x = 32$.
+              Example ($x=4$): threads 0--3 of rank 1 $\to$ word 0;
+              threads 0--3 of rank 2 $\to$ word 128.
+        \item \emph{Inter-block} (dashed): the $x$ threads that share a word are spread over
+              $\min(x,8)$ blocks, i.e.\ over different SMs.
+              Example ($x=4$): thread $t$ of ranks 1--4 $\to$ word $t$.
+      \end{itemize}
+    \item \textbf{Where the buffer is:} each worker's own smem; one block's DSMEM that every
+          worker targets (the \emph{hotspot}: rank 0 on SM 0, or rank 10 on SM 40); global memory.
+    \item \textbf{Time:} from when the first worker starts to when the last one finishes.
+    \item Result: atomics per second, all workers together. Every run is checked word by word.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Throughput: \texttt{atomicAdd}}
+  \centering
+  \includegraphics[width=0.96\linewidth,height=0.66\textheight,keepaspectratio]{images/atomics/plots_atomicadd-throughput.png}
+
+  \vspace{0.2em}
+  {\footnotesize smem stays flat ($\sim$300\,G/s): the hardware merges a warp's adds on one word. Global 48\,G/s, DSMEM 1.2--2.5\,G/s at $x=1$.}
+\end{frame}
+
+\begin{frame}{Throughput: \texttt{atomicOr}}
+  \centering
+  \includegraphics[width=0.96\linewidth,height=0.72\textheight,keepaspectratio]{images/atomics/plots_atomicor-throughput.png}
+
+  \vspace{0.2em}
+  {\footnotesize Same shape, $\sim$4$\times$ higher: smem 1150, global 200, DSMEM 5--10\,G/s at $x=1$.}
+\end{frame}
+
+\begin{frame}{Throughput: \texttt{atomicCAS}}
+  \centering
+  \includegraphics[width=0.96\linewidth,height=0.66\textheight,keepaspectratio]{images/atomics/plots_atomiccas-throughput.png}
+
+  \vspace{0.2em}
+  {\footnotesize The slowest: smem 300, global 24, DSMEM 0.6--1.3\,G/s at $x=1$, and smem also drops with contention.}
+\end{frame}
+
+% ============================================================ p2p: method
+\begin{frame}{Communication between SMs: DSMEM vs GMEM}
+  \vspace{0.3em}
+  \footnotesize
+  The simplest case: \textbf{two SMs exchange $x$ bytes}. Three ways to do it:
+  \begin{itemize}\itemsep4pt
+    \item \textbf{DSMEM push}: block A writes directly into block B's shared memory, then B reads it.
+    \item \textbf{DSMEM pull}: block A writes into its \emph{own} shared memory, block B reads it from there.
+    \item \textbf{GMEM}: block A writes into a global-memory buffer; after synchronization, block B reads it.
+  \end{itemize}
+  \vspace{0.3em}
+  Time $=$ cycles of the slower of sender and receiver, synchronization included;
+  $x$ from 16\,B to 32\,KiB, 32--1024 threads per block.
+\end{frame}
+
+\begin{frame}{Point to point: 32 threads per block}
+  \centering
+  \includegraphics[width=0.96\linewidth,height=0.74\textheight,keepaspectratio]{images/throughput/plot-p2p_p2p-32-threads.png}
+\end{frame}
+
+\begin{frame}{Point to point: 64 threads per block}
+  \centering
+  \includegraphics[width=0.96\linewidth,height=0.74\textheight,keepaspectratio]{images/throughput/plot-p2p_p2p-64-threads.png}
+\end{frame}
+
+\begin{frame}{Point to point: 128 threads per block}
+  \centering
+  \includegraphics[width=0.96\linewidth,height=0.74\textheight,keepaspectratio]{images/throughput/plot-p2p_p2p-128-threads.png}
+\end{frame}
+
+\begin{frame}{Point to point: 256 threads per block}
+  \centering
+  \includegraphics[width=0.96\linewidth,height=0.74\textheight,keepaspectratio]{images/throughput/plot-p2p_p2p-256-threads.png}
+\end{frame}
+
+\begin{frame}{Point to point: 512 threads per block}
+  \centering
+  \includegraphics[width=0.96\linewidth,height=0.74\textheight,keepaspectratio]{images/throughput/plot-p2p_p2p-512-threads.png}
+\end{frame}
+
+\begin{frame}{Point to point: 1024 threads per block}
+  \centering
+  \includegraphics[width=0.96\linewidth,height=0.74\textheight,keepaspectratio]{images/throughput/plot-p2p_p2p-1024-threads.png}
+\end{frame}
+
+\begin{frame}{Point to point: what we learn}
+  \vspace{0.4em}
+  \footnotesize
+  \begin{itemize}\itemsep5pt
+    \item \textbf{DSMEM outperforms GMEM for exchanges $\le$ 4\,KiB}: no round trip through L2.
+    \item Above that, GMEM wins: it moves large buffers faster than the SM-to-SM path.
+    \item \textbf{It depends a lot on which SMs talk}: pull from rank 11 $\to$ 10 is clearly faster
+          than rank 1 $\to$ 0 --- again the interconnect topology (TPC distance to the hub).
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Comparison: \emph{Benchmarking Thread Block Clusters}}
+  \centering
+  \includegraphics[width=0.8\linewidth,height=0.6\textheight,keepaspectratio]{images/throughput/plot-paper.png}
+
+  \raggedright
+  \scriptsize
+  The same paper reports DSMEM's speedup over global memory, but using H100 PCIe with \textbf{32 threads} moving
+  \texttt{uint8\_t} (\textbf{1\,B}) elements...
+\end{frame}
+
+% ============================================================ a2av: method
+\begin{frame}{Unbalanced communication: all-to-all-v in a cluster}
+  \vspace{0.3em}
+  \footnotesize
+  A 2D-partitioned BFS, at every level, hands each discovered vertex to the block that owns it:
+  every block sends a \textbf{different} number of bytes to every other block (all-to-all-\emph{v}),
+  and on power-law graphs the amounts are \textbf{skewed}.
+
+  \vspace{0.3em}
+  \begin{itemize}\itemsep3pt
+    \item \textbf{Where the sizes come from:} \texttt{axccl} generates unbalanced patterns for MPI
+          collectives (\textsc{heavytail}, \textsc{unimodalflat}, \dots) and writes them to a trace,
+          one line per (source, destination) pair.
+    \item \texttt{throughput.cu} \textbf{replays} the trace: MPI rank $i$ $\to$ block $i$ of one
+          cluster (up to 12), and $\mathit{sendsize}(i \to j)$ $\to$ bytes block $i$ delivers into
+          block $j$'s shared memory. No MPI: the file is only a recipe.
+    \item \textbf{One exchange:} \texttt{cluster.sync()} $\to$ move the bytes $\to$ \texttt{cluster.sync()}.
+          Time per exchange averaged over many rounds; the two barriers alone are the floor.
+    \item Every block also records its \textbf{busy time}: heavy senders arrive last, the others wait.
+    \item Correctness first: every received word is checked against the pattern.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Unbalanced communication: each block's shared memory}
+  \vspace{0.2em}
+  \footnotesize
+  Every block has the \textbf{same layout}, so every block knows where every other block's areas are:
+  \begin{itemize}\itemsep1pt
+    \item a \textbf{send area}: all the messages it has to send, back to back;
+    \item a \textbf{receive area}: room for all the messages it will receive, back to back;
+    \item both as large as the largest one over all blocks; an mbarrier in front (copy-engine completion).
+  \end{itemize}
+
+  \centering
+  \begin{tikzpicture}[scale=0.62, every node/.style={font=\scriptsize}]
+    % block 1
+    \node[anchor=east, font=\scriptsize\bfseries] at (-0.2,1.9) {block 1};
+    \draw[fill=gray!20] (0,1.5) rectangle (0.6,2.3); \node[font=\tiny] at (0.3,1.9) {bar};
+    \node[font=\tiny, gray] at (3.4,2.55) {send area};
+    \draw[fill=myred!25]   (0.6,1.5) rectangle (2.0,2.3); \node at (1.3,1.9) {$\to$1};
+    \draw[fill=myred!45]   (2.0,1.5) rectangle (4.6,2.3); \node at (3.3,1.9) {$\to$2};
+    \draw[fill=myred!15]   (4.6,1.5) rectangle (5.4,2.3); \node at (5.0,1.9) {$\to$0};
+    \draw[dashed] (5.4,1.5) rectangle (6.2,2.3);
+    \node[font=\tiny, gray] at (8.6,2.55) {receive area};
+    \draw[fill=myblue!25]  (6.2,1.5) rectangle (7.4,2.3); \node at (6.8,1.9) {1$\to$};
+    \draw[fill=myblue!40]  (7.4,1.5) rectangle (9.0,2.3); \node at (8.2,1.9) {2$\to$};
+    \draw[fill=myblue!15]  (9.0,1.5) rectangle (10.6,2.3); \node at (9.8,1.9) {0$\to$};
+    \draw[dashed] (10.6,1.5) rectangle (11.4,2.3);
+    % block 2
+    \node[anchor=east, font=\scriptsize\bfseries] at (-0.2,-0.1) {block 2};
+    \draw[fill=gray!20] (0,-0.5) rectangle (0.6,0.3); \node[font=\tiny] at (0.3,-0.1) {bar};
+    \draw[fill=myred!25]   (0.6,-0.5) rectangle (1.4,0.3); \node at (1.0,-0.1) {$\to$2};
+    \draw[fill=myred!45]   (1.4,-0.5) rectangle (3.2,0.3); \node at (2.3,-0.1) {$\to$0};
+    \draw[fill=myred!15]   (3.2,-0.5) rectangle (4.8,0.3); \node at (4.0,-0.1) {$\to$1};
+    \draw[dashed] (4.8,-0.5) rectangle (6.2,0.3);
+    \draw[fill=myblue!25]  (6.2,-0.5) rectangle (7.0,0.3); \node at (6.6,-0.1) {2$\to$};
+    \draw[fill=myblue!40]  (7.0,-0.5) rectangle (9.2,0.3); \node at (8.1,-0.1) {0$\to$};
+    \draw[fill=myblue!15]  (9.2,-0.5) rectangle (11.8,0.3); \node at (10.5,-0.1) {1$\to$};
+    % the message 1 -> 2
+    \draw[->, thick, myred] (3.3,1.5) .. controls (3.3,0.8) and (10.5,1.0) .. (10.5,0.3);
+    \node[myred, font=\tiny, fill=white, inner sep=1pt] at (7.0,0.95) {message $1\to2$};
+  \end{tikzpicture}
+
+  \raggedright
+  \scriptsize
+  Messages are in \textbf{rotated order}: block $b$ stores its message to $b$ first, then to
+  $b{+}1, b{+}2, \dots$ (mod $p$); same for its receive area. So at any moment the blocks work on
+  \emph{different} peers instead of all starting with block 0. Offset tables
+  (\texttt{out\_start}, \texttt{in\_start}) say where each message starts.
+\end{frame}
+
+\begin{frame}[fragile]{Unbalanced communication: the \texttt{a2av()} kernel}
+  \footnotesize
+  \begin{columns}[c,onlytextwidth]
+    \begin{column}{0.56\textwidth}
+\begin{minted}[fontsize=\scriptsize, frame=lines, framesep=2mm]{cuda}
+__global__ void a2av(Params params) {
+  // setup
+  for (int round = 0; round < rounds; round++) {
+    fill_send_area(b, round);  // produce
+    cluster.sync();      // data ready, areas free
+    long long t = clock64();
+    exchange(b, cluster, round);  // move bytes
+    __syncthreads();
+    busy += clock64() - t;
+    cluster.sync();      // everything delivered
+    check_recv_area(b, round);    // consume
+  }
+}
+\end{minted}
+    \end{column}
+    \begin{column}{0.42\textwidth}
+      \scriptsize
+      \begin{itemize}\itemsep3pt
+        \item one block per rank, one cluster
+        \item \textbf{setup}: decide between receiver's receive area (push) or the sender's
+              send area, in DSMEM (pull) or in global memory (gmem)
+        \item \texttt{exchange()} picks the method (next slide)
+        \item all threads copy the area \textbf{word by word, 16\,B each}
+        \item \texttt{busy}: this block's time until it is done; the exchange time is
+              barrier to barrier
+      \end{itemize}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Unbalanced communication: five ways to move the bytes}
+  \vspace{0.3em}
+  \footnotesize
+  \textbf{Directly SM to SM, through DSMEM}
+  \begin{itemize}\itemsep2pt
+    \item \textbf{dsmem-push}: my threads copy my \emph{send area} into the receivers' \emph{receive areas}.
+    \item \textbf{dsmem-pull}: my threads fill my \emph{receive area} by reading the senders' \emph{send areas}.
+    \item \textbf{dsmem-bulk}: thread $k$ asks the copy engine (TMA) to copy my message $k$ into its receiver; the receiver's mbarrier counts the bytes landed.
+  \end{itemize}
+
+  \vspace{0.3em}
+  \textbf{Through global memory}
+  \begin{itemize}\itemsep2pt
+    \item \textbf{gmem-ldst}: every block copies its whole send area to its slot in global memory,
+          \texttt{cluster.sync()}, then gathers its incoming messages from the senders' slots.
+    \item \textbf{gmem-tma}: the same two copies by the copy engine: one copy out per block, one copy in per message.
+  \end{itemize}
+\end{frame}
+
+% ============================================================ a2av: results per distribution
+\begin{frame}{\textsc{unimodalflat}: the balanced reference}
+  \footnotesize
+  \begin{itemize}\itemsep1pt
+    \item Almost uniform ($\propto 1 + 0.2\,(1 - x^2)$): every block sends $0.91$--$1.06\times$ the mean,
+          every message is close to the average (216--288\,B when the average is 256\,B).
+    \item Up to 2\,KiB: at 4\,KiB the send and receive areas no longer fit in shared memory.
+    \item DSMEM is faster up to 256\,B (fewer barriers: 2 against 3), global memory from 512\,B;
+          at 2\,KiB gmem-tma takes 7.6\,k cycles, dsmem-pull 15\,k, push and bulk 28\,k.
+  \end{itemize}
+  \centering
+  \includegraphics[width=\linewidth,height=0.5\textheight,keepaspectratio]{images/throughput/a2av-unimodalflat.png}
+\end{frame}
+
+\begin{frame}{\textsc{unimodalflat}: per block}
+  \footnotesize
+  Busy cycles of each block per exchange: from the first \texttt{cluster.sync()} until the block is
+  done (bulk: until all its incoming bytes have landed; gmem: the middle \texttt{cluster.sync()} included).
+
+  \vspace{0.3em}
+  \centering
+  \includegraphics[width=\linewidth,height=0.44\textheight,keepaspectratio]{images/throughput/plots_a2av-per-block-unimodalflat.png}
+
+  \raggedright
+  \begin{itemize}\itemsep1pt
+    \item Balanced pattern, balanced blocks: no block stands out, for any method.
+    \item Not explained yet: dsmem-push at 1\,KiB, blocks 2, 3, 6, 7 (the lightest senders, $-4$ to $-9\%$)
+          finish 3--4$\times$ earlier.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{\textsc{unimodalpeak}: two heavy senders}
+  \footnotesize
+  \begin{itemize}\itemsep1pt
+    \item A Gaussian cut into 12 equal slices: blocks 1 and 9 send $4\times$ the mean
+          (67\% of all bytes), blocks 4 and 11 $1.6\times$, the other 8 almost nothing.
+          Receives stay balanced ($\le 1.06\times$ the mean).
+    \item Up to 1\,KiB: at 2\,KiB the heaviest send area alone is 98\,KiB.
+    \item DSMEM is faster up to 128\,B, global memory from 256\,B (one step earlier than \textsc{unimodalflat}).
+  \end{itemize}
+  \centering
+  \includegraphics[width=\linewidth,height=0.5\textheight,keepaspectratio]{images/throughput/a2av-unimodalpeak.png}
+\end{frame}
+
+\begin{frame}{\textsc{unimodalpeak}: per block}
+  \centering
+  \includegraphics[width=\linewidth,height=0.44\textheight,keepaspectratio]{images/throughput/plots_a2av-per-block-unimodalpeak.png}
+
+  \raggedright
+  \footnotesize
+  \begin{itemize}\itemsep1pt
+    \item \textbf{push}: spikes at the heavy senders 1, 9 (and 4, 11): the exchange waits for them.
+    \item \textbf{pull}: most incoming bytes sit in blocks 1 and 9, so they read them locally and are the fastest.
+    \item \textbf{bulk}: each sender queues its copies in rotated order ($b, b{+}1, \dots$): the blocks right
+          after a heavy sender get their bytes first, those just before it last (ramp from 1 to 8, from 9 to 0).
+    \item \textbf{gmem}: flat, the middle \texttt{cluster.sync()} makes every block wait for the slowest.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{\textsc{monotonedecay}: one dominant sender}
+  \footnotesize
+  \begin{itemize}\itemsep1pt
+    \item $e^{-x}$ cut into 12 equal slices: block 6 sends $9\times$ the mean (77\% of all bytes),
+          block 3 $2\times$, the other 10 almost nothing. Receives stay balanced.
+    \item Only up to 512\,B: at 1\,KiB block 6's send area is 113\,KiB.
+    \item DSMEM is faster only up to 64\,B. From \textsc{unimodalflat} to here, at 512\,B, dsmem-pull gets
+          $2.5\times$ slower (5.4\,k $\to$ 13.8\,k cycles), gmem-tma only $1.3\times$ (4.7\,k $\to$ 6.2\,k).
+  \end{itemize}
+  \centering
+  \includegraphics[width=\linewidth,height=0.5\textheight,keepaspectratio]{images/throughput/a2av-monotonedecay.png}
+\end{frame}
+
+\begin{frame}{\textsc{monotonedecay}: per block}
+  \centering
+  \includegraphics[width=\linewidth,height=0.44\textheight,keepaspectratio]{images/throughput/plots_a2av-per-block-monotonedecay.png}
+
+  \raggedright
+  \footnotesize
+  \begin{itemize}\itemsep1pt
+    \item \textbf{push}: block 6 alone writes 77\% of the bytes: 14\,k cycles at 512\,B, the others $\sim$1.4\,k.
+    \item \textbf{pull}: the other 11 blocks all read from SM 6's shared memory; block 6 reads locally and
+          is the fastest.
+    \item \textbf{bulk}: one ramp starting at block 6 (6, 7, \dots, 11, 0, \dots, 5): the order in which
+          block 6's copies are queued.
+    \item \textbf{gmem}: flat again.
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{\textsc{heavytail}: a few heavy senders}
+  \footnotesize
+  \begin{itemize}\itemsep1pt
+    \item Pareto ($\alpha = 2.5$) cut into 12 log-spaced slices: block 6 sends $5\times$ the mean
+          (43\% of all bytes), blocks 3, 8 and 5 the next largest, then a long tail. Receives stay balanced.
+    \item Up to 1\,KiB: at 2\,KiB block 6's send area is 126\,KiB.
+    \item DSMEM is faster up to 128\,B, global memory from 256\,B; at 1\,KiB gmem-tma takes 6.5\,k cycles,
+          dsmem-pull 17\,k, push 25\,k, bulk 30\,k.
+  \end{itemize}
+  \centering
+  \includegraphics[width=\linewidth,height=0.5\textheight,keepaspectratio]{images/throughput/a2av-heavytail.png}
+\end{frame}
+
+\begin{frame}{\textsc{heavytail}: per block}
+  \centering
+  \includegraphics[width=\linewidth,height=0.44\textheight,keepaspectratio]{images/throughput/plots_a2av-per-block-heavytail.png}
+
+  \raggedright
+  \footnotesize
+  \begin{itemize}\itemsep1pt
+    \item \textbf{push}: one spike per heavy sender, in order of size: 6, 3, 8.
+    \item \textbf{pull}: dips at 6 (and 3) for the same reason as before: they read their own bytes locally.
+    \item \textbf{bulk}: the ramp starts at block 6 again.
+    \item \textbf{gmem}: flat. The imbalance is on the \emph{send} side: with DSMEM the heavy sender's SM
+          is the bottleneck (it writes, or is read by, everyone); with global memory it only copies its area
+          out once and the reads come from L2.
+  \end{itemize}
+\end{frame}
+
+\end{document}

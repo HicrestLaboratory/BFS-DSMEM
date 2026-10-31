@@ -43,9 +43,10 @@ replayed among the blocks of one cluster)
   ns, cycles     whole repetition (`rounds` exchanges), timed by rank 0.
   ns_per_exchange, cycles_per_exchange, gbps
                  one exchange: time, and total_bytes / time.
-  busy_max_ns, busy_mean_ns
-                 time the blocks spent moving bytes in one exchange: the
-                 slowest block, and the mean over blocks.
+  rank, sm, sent_bytes, received_bytes, busy_cycles
+                 ONE ROW PER BLOCK: which block, on which SM, the bytes it
+                 sends and receives in one exchange, and the cycles it spent
+                 moving bytes in one exchange (until the final barrier).
 
 Table `smem_bandwidth` (dgx-spark/throughput/smem_bandwidth.cu: bandwidth of
 an SM's own shared memory, one block per SM on every SM)
@@ -110,7 +111,7 @@ TABLES = {
     "total_bytes", "max_sent_bytes", "max_received_bytes",
     "block_size", "rounds", "seed", "rep",
     "ns", "cycles", "ns_per_exchange", "cycles_per_exchange", "gbps",
-    "busy_max_ns", "busy_mean_ns",
+    "rank", "sm", "sent_bytes", "received_bytes", "busy_cycles",
   ]),
   "smem_bandwidth": ("smem_bandwidth", [
     "op", "width", "stride_bytes", "block_size", "blocks", "steps", "seed", "rep",

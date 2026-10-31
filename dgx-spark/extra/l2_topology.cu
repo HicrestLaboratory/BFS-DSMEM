@@ -77,6 +77,24 @@ __global__ void warm_l2(const unsigned* buf, size_t n, unsigned long long* s) {
     if (acc == 0xDEADBEEFull) *s = acc;
 }
 
+// The chase from SM `sm` only; false if no block ran there.
+bool run(const unsigned* d, int nsm, int smemPerBlock, int steps, unsigned* lat, unsigned* ran_on,
+         unsigned sm, unsigned start, std::vector<unsigned>& outv) {
+    *ran_on = 0xFFFF;
+    fine_chase<<<nsm, 32, smemPerBlock>>>(d, start, steps, lat, sm, ran_on);
+    CUDA_CHECK(cudaDeviceSynchronize());
+    if (*ran_on != sm) return false;
+    outv.assign(lat, lat + steps);
+    return true;
+}
+
+// Header row: one column per TPC position inside a GPC.
+void position_header(const char* note) {
+    fprintf(stderr, "      ");
+    for (int p = 0; p < NUM_TPCs_PER_GPC; p++) fprintf(stderr, "   pos%-3d", p);
+    fprintf(stderr, "%s\n", note);
+}
+
 int main(int argc, char** argv) {
     Args a;
     parse_args(argc, argv, &a, "l2_topology",
@@ -125,15 +143,6 @@ int main(int argc, char** argv) {
     warm_l2<<<nsm, 256>>>(d, n, s);
     CUDA_CHECK(cudaDeviceSynchronize());
 
-    auto run = [&](unsigned sm, unsigned start, std::vector<unsigned>& outv) {
-        *ran_on = 0xFFFF;
-        fine_chase<<<nsm, 32, smemPerBlock>>>(d, start, steps, lat, sm, ran_on);
-        CUDA_CHECK(cudaDeviceSynchronize());
-        if (*ran_on != sm) return false;
-        outv.assign(lat, lat + steps);
-        return true;
-    };
-
     fprintf(stderr, "buffer %zu MiB (L2-resident, warmed), %d timed loads per SM\n",
             a.buffer_kib / 1024, steps);
     fprintf(stderr, "start index %u, identical for every SM\n", shared_start);
@@ -145,7 +154,7 @@ int main(int argc, char** argv) {
     std::vector<unsigned> med(nsm, 0);
     for (int sm = 0; sm < nsm; sm++) {
         std::vector<unsigned> v;
-        if (!run((unsigned)sm, shared_start, v)) continue;
+        if (!run(d, nsm, smemPerBlock, steps, lat, ran_on, (unsigned)sm, shared_start, v)) continue;
         std::sort(v.begin(), v.end());
         med[sm] = v[steps / 2];
         int tpc = tpc_of(sm);
@@ -153,13 +162,6 @@ int main(int argc, char** argv) {
                pos_of_tpc(tpc),
                a.buffer_kib, steps, a.seed, v[steps / 4], v[steps / 2], v[3 * steps / 4]);
     }
-
-    // Header row: one column per TPC position inside a GPC.
-    auto position_header = [](const char* note) {
-        fprintf(stderr, "      ");
-        for (int p = 0; p < NUM_TPCs_PER_GPC; p++) fprintf(stderr, "   pos%-3d", p);
-        fprintf(stderr, "%s\n", note);
-    };
 
     fprintf(stderr, "=== 1. median latency from every SM (cell = the SMs of the TPC) ===\n");
     position_header("");

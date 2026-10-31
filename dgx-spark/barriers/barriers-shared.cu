@@ -15,7 +15,7 @@
 //
 // THE MEASUREMENT
 //   Every thread of every block, once, at the start of the kernel:
-//       start = clock();  barrier;  v = load from shared memory;  end = clock();
+//       start = clock64();  barrier;  v = load from shared memory;  end = clock64();
 //   --warmup untimed launches come first: without them the first launches
 //   are off (cluster.sync(): ~3850, then ~840, then from the 8th launch on
 //   ~470 cycles).
@@ -36,35 +36,35 @@
 
 #include "../common.cuh"   // CUDA_CHECK, Args, print_header, print_stats_line, ...
 
-__managed__ long arrive_time[12][1024];
+__managed__ long long arrive_time[12][1024];
 
 __global__ void barrier_kernel() {
   __shared__ unsigned word;
   unsigned v = 0;
-  auto start = clock();
+  long long start = clock64();
   __syncthreads();
   asm volatile("ld.volatile.shared.u32 %0, [%1];"            // a load from shared memory...
               : "=r"(v)
               : "r"((unsigned)__cvta_generic_to_shared(&word))
               : "memory");
-  auto end = clock();
-  auto duration = end - start + (v == 12345);   // ...whose value is used, so it isn't removed
+  long long end = clock64();
+  long long duration = end - start + (v == 12345);   // ...whose value is used, so it isn't removed
 
   arrive_time[blockIdx.x][threadIdx.x] = duration;
 }
 
 __global__ void cluster_sync_kernel() {
   __shared__ unsigned word;
-  auto cluster = cooperative_groups::this_cluster();
+  cooperative_groups::cluster_group cluster = cooperative_groups::this_cluster();
   unsigned v = 0;
-  auto start = clock();
+  long long start = clock64();
   cluster.sync();
   asm volatile("ld.volatile.shared.u32 %0, [%1];"            // a load from shared memory...
               : "=r"(v)
               : "r"((unsigned)__cvta_generic_to_shared(&word))
               : "memory");
-  auto end = clock();
-  auto duration = end - start + (v == 12345);   // ...whose value is used, so it isn't removed
+  long long end = clock64();
+  long long duration = end - start + (v == 12345);   // ...whose value is used, so it isn't removed
 
   arrive_time[blockIdx.x][threadIdx.x] = duration;
 }
@@ -75,32 +75,39 @@ __global__ void cluster_sync_kernel() {
 __global__ void cluster_relaxed_kernel() {
   __shared__ unsigned word;
   unsigned v = 0;
-  auto start = clock();
+  long long start = clock64();
   asm volatile("barrier.cluster.arrive.relaxed.aligned;\n\t"
                "barrier.cluster.wait.aligned;" ::: "memory");
   asm volatile("ld.volatile.shared.u32 %0, [%1];"            // a load from shared memory...
               : "=r"(v)
               : "r"((unsigned)__cvta_generic_to_shared(&word))
               : "memory");
-  auto end = clock();
-  auto duration = end - start + (v == 12345);   // ...whose value is used, so it isn't removed
+  long long end = clock64();
+  long long duration = end - start + (v == 12345);   // ...whose value is used, so it isn't removed
 
   arrive_time[blockIdx.x][threadIdx.x] = duration;
 }
 
 __global__ void grid_sync_kernel() {
   __shared__ unsigned word;
-  auto grid = cooperative_groups::this_grid();
+  cooperative_groups::grid_group grid = cooperative_groups::this_grid();
   unsigned v = 0;
 
-  auto start = clock();
+  long long start = clock64();
   grid.sync();
   asm volatile("ld.volatile.shared.u32 %0, [%1];"            // a load from shared memory...
               : "=r"(v)
               : "r"((unsigned)__cvta_generic_to_shared(&word))
               : "memory");
-  auto end = clock();
+  long long end = clock64();
   arrive_time[blockIdx.x][threadIdx.x] = end - start + (v == 12345);   // ...whose value is used, so it isn't removed
+}
+
+// One launch: cooperative for grid.sync(), one cluster of --blocks otherwise.
+void launch(void (*kernel)(), bool grid, const Args& a, const cudaLaunchConfig_t& config) {
+  if (grid) CUDA_CHECK(cudaLaunchCooperativeKernel((void*)kernel, a.blocks, a.block_size, nullptr));
+  else      CUDA_CHECK(cudaLaunchKernelEx(&config, kernel));
+  CUDA_CHECK(cudaDeviceSynchronize());
 }
 
 int main(int argc, char** argv) {
@@ -148,24 +155,19 @@ int main(int argc, char** argv) {
   attribute[0].val.clusterDim.z = 1;
   config.attrs = attribute;
   config.numAttrs = 1;
-  auto launch = [&]() {
-    if (grid) CUDA_CHECK(cudaLaunchCooperativeKernel((void*)kernel, a.blocks, a.block_size, nullptr));
-    else      CUDA_CHECK(cudaLaunchKernelEx(&config, kernel));
-    CUDA_CHECK(cudaDeviceSynchronize());
-  };
 
   char extra[200];
   snprintf(extra, sizeof extra, "# barrier: %s\n# blocks: %d\n", barrier, a.blocks);
   print_header(argc, argv, a, 0, extra,
                "benchmark,barrier,block_size,blocks,seed,rep,block,thread,cycles\n");
 
-  for (int w = 0; w < a.warmup; w++) launch();
+  for (int w = 0; w < a.warmup; w++) launch(kernel, grid, a, config);
   std::vector<double> all;
   for (int rep = 0; rep < a.reps; rep++) {
-    launch();
+    launch(kernel, grid, a, config);
     for (int i = 0; i < a.blocks; i++) {
       for (int j = 0; j < a.block_size; j++) {
-        printf("barriers-shared,%s,%d,%d,%d,%d,%d,%d,%ld\n", barrier, a.block_size, a.blocks, a.seed,
+        printf("barriers-shared,%s,%d,%d,%d,%d,%d,%d,%lld\n", barrier, a.block_size, a.blocks, a.seed,
                rep, i, j, arrive_time[i][j]);
         all.push_back(arrive_time[i][j]);
       }

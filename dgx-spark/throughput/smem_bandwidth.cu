@@ -72,6 +72,13 @@ template <> __device__ __forceinline__ void store_shared<16>(uint32_t addr, unsi
     asm volatile("st.volatile.shared.v4.u32 [%0], {%1, %1, %1, %1};" ::"r"(addr), "r"(v));
 }
 
+// Address of access s of this thread: consecutive threads stride_elems
+// elements apart.
+template <int W>
+__device__ __forceinline__ uint32_t address(uint32_t base, unsigned mask, int stride_elems, int s) {
+    return base + (((unsigned)(s * blockDim.x + threadIdx.x) * stride_elems) & mask) * W;
+}
+
 template <int W>
 __global__ void smem_bandwidth(int write, int stride_elems, int steps, int warmup, BlockTime* out) {
     extern __shared__ __align__(16) unsigned char smem[];
@@ -81,12 +88,6 @@ __global__ void smem_bandwidth(int write, int stride_elems, int steps, int warmu
     for (int i = threadIdx.x; i < BUFFER_BYTES / 4; i += blockDim.x) ((unsigned*)smem)[i] = i;
     __syncthreads();
 
-    // Address of access s of this thread: consecutive threads stride_elems
-    // elements apart.
-    auto address = [&](int s) {
-        return base + (((unsigned)(s * blockDim.x + threadIdx.x) * stride_elems) & mask) * W;
-    };
-
     unsigned acc = 0;
     long long c0 = 0;
     unsigned long long t0 = 0;
@@ -95,10 +96,12 @@ __global__ void smem_bandwidth(int write, int stride_elems, int steps, int warmu
         if (pass == warmup) { c0 = clock64(); t0 = globaltimer(); }
         if (write) {
 #pragma unroll 8
-            for (int s = 0; s < steps; s++) store_shared<W>(address(s), (unsigned)s);
+            for (int s = 0; s < steps; s++)
+                store_shared<W>(address<W>(base, mask, stride_elems, s), (unsigned)s);
         } else {
 #pragma unroll 8
-            for (int s = 0; s < steps; s++) acc ^= load_shared<W>(address(s));
+            for (int s = 0; s < steps; s++)
+                acc ^= load_shared<W>(address<W>(base, mask, stride_elems, s));
         }
     }
     __syncthreads();   // the block is done when its slowest thread is
@@ -161,8 +164,9 @@ int main(int argc, char** argv) {
     // ---- one block per SM
     BlockTime* out;
     CUDA_CHECK(cudaMallocManaged(&out, sms * sizeof(BlockTime)));
-    auto kernel = (a.width == 4) ? smem_bandwidth<4>
-                : (a.width == 8) ? smem_bandwidth<8> : smem_bandwidth<16>;
+    void (*kernel)(int, int, int, int, BlockTime*) = (a.width == 4) ? smem_bandwidth<4>
+                                                   : (a.width == 8) ? smem_bandwidth<8>
+                                                                    : smem_bandwidth<16>;
     CUDA_CHECK(cudaFuncSetAttribute((const void*)kernel,
                                     cudaFuncAttributeMaxDynamicSharedMemorySize, BUFFER_BYTES));
     const int stride_elems = stride_bytes / a.width;
