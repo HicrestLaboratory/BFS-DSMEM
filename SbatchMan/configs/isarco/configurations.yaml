@@ -1,0 +1,6 @@
+isarco:
+  scheduler: local
+  configs:
+    local:
+      template_path: /home/jacopo.raffi/BFS-DSMEM/SbatchMan/configs/isarco/local.sh
+      scheduler: local

@@ -8,6 +8,14 @@
 # SbatchMan/experiments/<cluster>/<config>/<tag>/<timestamp>/, so each tag
 # carries the parameters that identify the job.
 
+sequential: True
+
+configs:
+  isarco:
+    scheduler: local
+    configs:
+      - name: "local"
+
 variables:
   reps: [21]
   op: [or, add, cas]

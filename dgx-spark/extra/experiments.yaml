@@ -7,6 +7,15 @@
 # and look at the results with
 #     sbatchman visualize --presets plots.json
 
+sequential: True
+
+configs:
+  isarco:
+    scheduler: local
+    configs:
+      - name: "local"
+
+
 jobs:
   # global atomics vs a private copy per block vs a histogram split over a
   # cluster of 2, 4, 8, 12 blocks, for 1536 to 393216 bins; 11 timed runs each.

@@ -1,6 +1,0 @@
-dgx-spark:
-  scheduler: local
-  configs:
-    local:
-      template_path: /home/fabio.missagia/BFS-DSMEM/SbatchMan/configs/dgx-spark/local.sh
-      scheduler: local

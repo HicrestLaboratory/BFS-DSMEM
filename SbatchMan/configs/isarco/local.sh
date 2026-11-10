@@ -11,12 +11,13 @@ export SBATCHMAN_WD={CWD}
 export SBATCHMAN_JOB_DIR={EXP_DIR}
 export SBATCHMAN_JOB_TAG={JOB_TAG}
 export SBATCHMAN_JOB_CONFIG={CONFIG}
+export SBATCHMAN_CLUSTER_NAME=isarco
 
 echo "start_timestamp: '$(date +%Y%m%d_%H%M%S.%N)'" >> "{EXP_DIR}/metadata.yaml"
 
 
 # Change to the submission directory
-cd "{CWD}"
+cd "$SBATCHMAN_WD"
 
 # Update job_id in metadata.yaml
 perl -i -pe"s/job_id: [0-9]*/job_id: $$/" "{EXP_DIR}/metadata.yaml"

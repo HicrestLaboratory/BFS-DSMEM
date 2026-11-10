@@ -20,6 +20,15 @@
 #   barriers-gmem    the same with a load that misses L2 and goes to DRAM.
 # 5 launches: a job with 12 blocks x 1024 threads is already 61440 rows.
 
+sequential: True
+
+configs:
+  isarco:
+    scheduler: local
+    configs:
+      - name: "local"
+
+
 variables:
   program: [barriers, barriers-shared, barriers-l2, barriers-gmem]
   reps: [5]
