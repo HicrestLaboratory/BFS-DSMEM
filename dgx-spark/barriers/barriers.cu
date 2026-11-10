@@ -1,14 +1,15 @@
-// barriers.cu — how long ONE barrier really takes, from thread 0 of each
-// block. The kernels are those of barriers.cu (the paper's naive ones,
-// plus cluster-relaxed); only the output changes: one CSV row per block per
-// launch, for its thread 0.
+// barriers.cu — how long each thread waits in ONE barrier. The kernels are
+// those of paper-benchmark/paper-barriers-naive.cu (plus cluster-relaxed); only
+// the host side changes: flags instead of a fixed sweep, and one CSV row per
+// thread per launch.
 //
-// Why thread 0? Warp 0 does the work of the barrier (e.g. in grid.sync() it
-// is warp 0 that does the atomic in global memory and spins on it), so its
-// clock read comes after the barrier is really over. The other warps may
-// read the clock early (see the WARNING below), and barriers-shared.cu's fix,
-// a load after the barrier, adds the load's own time, which grows when many
-// warps load at once. Thread 0 needs neither.
+// plots-naive.json shows every thread. plots-warp0.json shows only the threads of
+// warp 0 (thread < 32): warp 0 does the work of the barrier (e.g. in
+// grid.sync() it is warp 0 that does the atomic in global memory and spins on
+// it), so its clock read comes after the barrier is really over. The other
+// warps may read the clock early (see the WARNING below), and
+// barriers-shared.cu's fix, a load after the barrier, adds the load's own time,
+// which grows when many warps load at once. Warp 0 needs neither.
 //
 // THE BARRIERS (--barrier)
 //   syncthreads  __syncthreads(): the threads of one block.
@@ -20,8 +21,7 @@
 //                cooperative launch.
 //
 // THE MEASUREMENT
-//   Every thread of every block, once, at the start of the kernel (only
-//   thread 0 of each block is printed):
+//   Every thread of every block, once, at the start of the kernel:
 //       start = clock64();  barrier;  end = clock64();
 //   --warmup untimed launches come first: without them the first launches
 //   are off (cluster.sync(): ~3850, then ~840, then from the 8th launch on
@@ -140,16 +140,18 @@ int main(int argc, char** argv) {
   char extra[200];
   snprintf(extra, sizeof extra, "# barrier: %s\n# blocks: %d\n", barrier, a.blocks);
   print_header(argc, argv, a, 0, extra,
-               "benchmark,barrier,block_size,blocks,seed,rep,block,cycles\n");
+               "benchmark,barrier,block_size,blocks,seed,rep,block,thread,cycles\n");
 
   for (int w = 0; w < a.warmup; w++) launch(kernel, grid, a, config);
   std::vector<double> all;
   for (int rep = 0; rep < a.reps; rep++) {
     launch(kernel, grid, a, config);
-    for (int i = 0; i < a.blocks; i++) {   // thread 0 of every block only
-      printf("barriers,%s,%d,%d,%d,%d,%d,%lld\n", barrier, a.block_size, a.blocks, a.seed,
-             rep, i, arrive_time[i][0]);
-      all.push_back(arrive_time[i][0]);
+    for (int i = 0; i < a.blocks; i++) {
+      for (int j = 0; j < a.block_size; j++) {
+        printf("barriers,%s,%d,%d,%d,%d,%d,%d,%lld\n", barrier, a.block_size, a.blocks, a.seed,
+               rep, i, j, arrive_time[i][j]);
+        all.push_back(arrive_time[i][j]);
+      }
     }
   }
 

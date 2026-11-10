@@ -28,5 +28,6 @@ slides/slides.run.xml
 slides/slides.snm
 slides/slides.toc
 slides/_minted
+slides/slides.vrb
 cuda_micro_bench/
 build/

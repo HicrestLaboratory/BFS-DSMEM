@@ -9,7 +9,7 @@
       "rendererBackend": "matplotlib",
       "single": {
         "database": "data",
-        "sql": "WITH ranked AS (\n  SELECT block_size, blocks, cycles,\n         ROW_NUMBER() OVER (PARTITION BY block_size, blocks ORDER BY cycles) - 1 AS i,\n         COUNT(*) OVER (PARTITION BY block_size, blocks) AS n\n  FROM barriers_naive WHERE barrier = 'syncthreads')\nSELECT block_size, blocks, cycles,\n       CASE i WHEN 0 THEN 'min' WHEN n - 1 THEN 'max' WHEN (n - 1) / 2 THEN 'med'\n              WHEN (n - 1) / 4 THEN 'q1' ELSE 'q3' END AS stat\nFROM ranked\nWHERE i IN (0, (n - 1) / 4, (n - 1) / 2, 3 * (n - 1) / 4, n - 1)",
+        "sql": "WITH ranked AS (\n  SELECT block_size, blocks, cycles,\n         ROW_NUMBER() OVER (PARTITION BY block_size, blocks ORDER BY cycles) - 1 AS i,\n         COUNT(*) OVER (PARTITION BY block_size, blocks) AS n\n  FROM barriers WHERE barrier = 'syncthreads')\nSELECT block_size, blocks, cycles,\n       CASE i WHEN 0 THEN 'min' WHEN n - 1 THEN 'max' WHEN (n - 1) / 2 THEN 'med'\n              WHEN (n - 1) / 4 THEN 'q1' ELSE 'q3' END AS stat\nFROM ranked\nWHERE i IN (0, (n - 1) / 4, (n - 1) / 2, 3 * (n - 1) / 4, n - 1)",
         "plotType": "line",
         "x": "block_size",
         "y": [
@@ -25,7 +25,7 @@
         "panels": [
           {
             "database": "data",
-            "sql": "WITH ranked AS (\n  SELECT block_size, blocks, cycles,\n         ROW_NUMBER() OVER (PARTITION BY block_size, blocks ORDER BY cycles) - 1 AS i,\n         COUNT(*) OVER (PARTITION BY block_size, blocks) AS n\n  FROM barriers_naive WHERE barrier = 'syncthreads')\nSELECT block_size, blocks, cycles,\n       CASE i WHEN 0 THEN 'min' WHEN n - 1 THEN 'max' WHEN (n - 1) / 2 THEN 'med'\n              WHEN (n - 1) / 4 THEN 'q1' ELSE 'q3' END AS stat\nFROM ranked\nWHERE i IN (0, (n - 1) / 4, (n - 1) / 2, 3 * (n - 1) / 4, n - 1)",
+            "sql": "WITH ranked AS (\n  SELECT block_size, blocks, cycles,\n         ROW_NUMBER() OVER (PARTITION BY block_size, blocks ORDER BY cycles) - 1 AS i,\n         COUNT(*) OVER (PARTITION BY block_size, blocks) AS n\n  FROM barriers WHERE barrier = 'syncthreads')\nSELECT block_size, blocks, cycles,\n       CASE i WHEN 0 THEN 'min' WHEN n - 1 THEN 'max' WHEN (n - 1) / 2 THEN 'med'\n              WHEN (n - 1) / 4 THEN 'q1' ELSE 'q3' END AS stat\nFROM ranked\nWHERE i IN (0, (n - 1) / 4, (n - 1) / 2, 3 * (n - 1) / 4, n - 1)",
             "plotType": "line",
             "x": "block_size",
             "y": [
@@ -44,7 +44,7 @@
       "rendererBackend": "matplotlib",
       "single": {
         "database": "data",
-        "sql": "WITH ranked AS (\n  SELECT block_size, blocks, cycles,\n         ROW_NUMBER() OVER (PARTITION BY block_size, blocks ORDER BY cycles) - 1 AS i,\n         COUNT(*) OVER (PARTITION BY block_size, blocks) AS n\n  FROM barriers_naive WHERE barrier = 'cluster')\nSELECT block_size, blocks, cycles,\n       CASE i WHEN 0 THEN 'min' WHEN n - 1 THEN 'max' WHEN (n - 1) / 2 THEN 'med'\n              WHEN (n - 1) / 4 THEN 'q1' ELSE 'q3' END AS stat\nFROM ranked\nWHERE i IN (0, (n - 1) / 4, (n - 1) / 2, 3 * (n - 1) / 4, n - 1)",
+        "sql": "WITH ranked AS (\n  SELECT block_size, blocks, cycles,\n         ROW_NUMBER() OVER (PARTITION BY block_size, blocks ORDER BY cycles) - 1 AS i,\n         COUNT(*) OVER (PARTITION BY block_size, blocks) AS n\n  FROM barriers WHERE barrier = 'cluster')\nSELECT block_size, blocks, cycles,\n       CASE i WHEN 0 THEN 'min' WHEN n - 1 THEN 'max' WHEN (n - 1) / 2 THEN 'med'\n              WHEN (n - 1) / 4 THEN 'q1' ELSE 'q3' END AS stat\nFROM ranked\nWHERE i IN (0, (n - 1) / 4, (n - 1) / 2, 3 * (n - 1) / 4, n - 1)",
         "plotType": "line",
         "x": "block_size",
         "y": [
@@ -60,7 +60,7 @@
         "panels": [
           {
             "database": "data",
-            "sql": "WITH ranked AS (\n  SELECT block_size, blocks, cycles,\n         ROW_NUMBER() OVER (PARTITION BY block_size, blocks ORDER BY cycles) - 1 AS i,\n         COUNT(*) OVER (PARTITION BY block_size, blocks) AS n\n  FROM barriers_naive WHERE barrier = 'cluster')\nSELECT block_size, blocks, cycles,\n       CASE i WHEN 0 THEN 'min' WHEN n - 1 THEN 'max' WHEN (n - 1) / 2 THEN 'med'\n              WHEN (n - 1) / 4 THEN 'q1' ELSE 'q3' END AS stat\nFROM ranked\nWHERE i IN (0, (n - 1) / 4, (n - 1) / 2, 3 * (n - 1) / 4, n - 1)",
+            "sql": "WITH ranked AS (\n  SELECT block_size, blocks, cycles,\n         ROW_NUMBER() OVER (PARTITION BY block_size, blocks ORDER BY cycles) - 1 AS i,\n         COUNT(*) OVER (PARTITION BY block_size, blocks) AS n\n  FROM barriers WHERE barrier = 'cluster')\nSELECT block_size, blocks, cycles,\n       CASE i WHEN 0 THEN 'min' WHEN n - 1 THEN 'max' WHEN (n - 1) / 2 THEN 'med'\n              WHEN (n - 1) / 4 THEN 'q1' ELSE 'q3' END AS stat\nFROM ranked\nWHERE i IN (0, (n - 1) / 4, (n - 1) / 2, 3 * (n - 1) / 4, n - 1)",
             "plotType": "line",
             "x": "block_size",
             "y": [
@@ -79,7 +79,7 @@
       "rendererBackend": "matplotlib",
       "single": {
         "database": "data",
-        "sql": "WITH ranked AS (\n  SELECT block_size, blocks, cycles,\n         ROW_NUMBER() OVER (PARTITION BY block_size, blocks ORDER BY cycles) - 1 AS i,\n         COUNT(*) OVER (PARTITION BY block_size, blocks) AS n\n  FROM barriers_naive WHERE barrier = 'cluster-relaxed')\nSELECT block_size, blocks, cycles,\n       CASE i WHEN 0 THEN 'min' WHEN n - 1 THEN 'max' WHEN (n - 1) / 2 THEN 'med'\n              WHEN (n - 1) / 4 THEN 'q1' ELSE 'q3' END AS stat\nFROM ranked\nWHERE i IN (0, (n - 1) / 4, (n - 1) / 2, 3 * (n - 1) / 4, n - 1)",
+        "sql": "WITH ranked AS (\n  SELECT block_size, blocks, cycles,\n         ROW_NUMBER() OVER (PARTITION BY block_size, blocks ORDER BY cycles) - 1 AS i,\n         COUNT(*) OVER (PARTITION BY block_size, blocks) AS n\n  FROM barriers WHERE barrier = 'cluster-relaxed')\nSELECT block_size, blocks, cycles,\n       CASE i WHEN 0 THEN 'min' WHEN n - 1 THEN 'max' WHEN (n - 1) / 2 THEN 'med'\n              WHEN (n - 1) / 4 THEN 'q1' ELSE 'q3' END AS stat\nFROM ranked\nWHERE i IN (0, (n - 1) / 4, (n - 1) / 2, 3 * (n - 1) / 4, n - 1)",
         "plotType": "line",
         "x": "block_size",
         "y": [
@@ -95,7 +95,7 @@
         "panels": [
           {
             "database": "data",
-            "sql": "WITH ranked AS (\n  SELECT block_size, blocks, cycles,\n         ROW_NUMBER() OVER (PARTITION BY block_size, blocks ORDER BY cycles) - 1 AS i,\n         COUNT(*) OVER (PARTITION BY block_size, blocks) AS n\n  FROM barriers_naive WHERE barrier = 'cluster-relaxed')\nSELECT block_size, blocks, cycles,\n       CASE i WHEN 0 THEN 'min' WHEN n - 1 THEN 'max' WHEN (n - 1) / 2 THEN 'med'\n              WHEN (n - 1) / 4 THEN 'q1' ELSE 'q3' END AS stat\nFROM ranked\nWHERE i IN (0, (n - 1) / 4, (n - 1) / 2, 3 * (n - 1) / 4, n - 1)",
+            "sql": "WITH ranked AS (\n  SELECT block_size, blocks, cycles,\n         ROW_NUMBER() OVER (PARTITION BY block_size, blocks ORDER BY cycles) - 1 AS i,\n         COUNT(*) OVER (PARTITION BY block_size, blocks) AS n\n  FROM barriers WHERE barrier = 'cluster-relaxed')\nSELECT block_size, blocks, cycles,\n       CASE i WHEN 0 THEN 'min' WHEN n - 1 THEN 'max' WHEN (n - 1) / 2 THEN 'med'\n              WHEN (n - 1) / 4 THEN 'q1' ELSE 'q3' END AS stat\nFROM ranked\nWHERE i IN (0, (n - 1) / 4, (n - 1) / 2, 3 * (n - 1) / 4, n - 1)",
             "plotType": "line",
             "x": "block_size",
             "y": [
@@ -114,7 +114,7 @@
       "rendererBackend": "matplotlib",
       "single": {
         "database": "data",
-        "sql": "WITH ranked AS (\n  SELECT block_size, blocks, cycles,\n         ROW_NUMBER() OVER (PARTITION BY block_size, blocks ORDER BY cycles) - 1 AS i,\n         COUNT(*) OVER (PARTITION BY block_size, blocks) AS n\n  FROM barriers_naive WHERE barrier = 'grid')\nSELECT block_size, blocks, cycles,\n       CASE i WHEN 0 THEN 'min' WHEN n - 1 THEN 'max' WHEN (n - 1) / 2 THEN 'med'\n              WHEN (n - 1) / 4 THEN 'q1' ELSE 'q3' END AS stat\nFROM ranked\nWHERE i IN (0, (n - 1) / 4, (n - 1) / 2, 3 * (n - 1) / 4, n - 1)",
+        "sql": "WITH ranked AS (\n  SELECT block_size, blocks, cycles,\n         ROW_NUMBER() OVER (PARTITION BY block_size, blocks ORDER BY cycles) - 1 AS i,\n         COUNT(*) OVER (PARTITION BY block_size, blocks) AS n\n  FROM barriers WHERE barrier = 'grid')\nSELECT block_size, blocks, cycles,\n       CASE i WHEN 0 THEN 'min' WHEN n - 1 THEN 'max' WHEN (n - 1) / 2 THEN 'med'\n              WHEN (n - 1) / 4 THEN 'q1' ELSE 'q3' END AS stat\nFROM ranked\nWHERE i IN (0, (n - 1) / 4, (n - 1) / 2, 3 * (n - 1) / 4, n - 1)",
         "plotType": "line",
         "x": "block_size",
         "y": [
@@ -130,7 +130,7 @@
         "panels": [
           {
             "database": "data",
-            "sql": "WITH ranked AS (\n  SELECT block_size, blocks, cycles,\n         ROW_NUMBER() OVER (PARTITION BY block_size, blocks ORDER BY cycles) - 1 AS i,\n         COUNT(*) OVER (PARTITION BY block_size, blocks) AS n\n  FROM barriers_naive WHERE barrier = 'grid')\nSELECT block_size, blocks, cycles,\n       CASE i WHEN 0 THEN 'min' WHEN n - 1 THEN 'max' WHEN (n - 1) / 2 THEN 'med'\n              WHEN (n - 1) / 4 THEN 'q1' ELSE 'q3' END AS stat\nFROM ranked\nWHERE i IN (0, (n - 1) / 4, (n - 1) / 2, 3 * (n - 1) / 4, n - 1)",
+            "sql": "WITH ranked AS (\n  SELECT block_size, blocks, cycles,\n         ROW_NUMBER() OVER (PARTITION BY block_size, blocks ORDER BY cycles) - 1 AS i,\n         COUNT(*) OVER (PARTITION BY block_size, blocks) AS n\n  FROM barriers WHERE barrier = 'grid')\nSELECT block_size, blocks, cycles,\n       CASE i WHEN 0 THEN 'min' WHEN n - 1 THEN 'max' WHEN (n - 1) / 2 THEN 'med'\n              WHEN (n - 1) / 4 THEN 'q1' ELSE 'q3' END AS stat\nFROM ranked\nWHERE i IN (0, (n - 1) / 4, (n - 1) / 2, 3 * (n - 1) / 4, n - 1)",
             "plotType": "line",
             "x": "block_size",
             "y": [

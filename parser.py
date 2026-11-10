@@ -57,17 +57,24 @@ an SM's own shared memory, one block per SM on every SM)
   bytes_per_cycle_per_sm, gbps_per_sm   the median block
   gbps_chip      all blocks' bytes over the slowest block's time.
 
-Tables `barriers_naive` and `barriers_shared` (dgx-spark/barriers/barriers-naive.cu
-and barriers-shared.cu: how long each thread waits in ONE barrier)
+Tables `barriers`, `barriers_shared`, `barriers_l2` and `barriers_gmem`
+(dgx-spark/barriers/barriers.cu, barriers-shared.cu, barriers-l2.cu and
+barriers-gmem.cu: how long each thread waits in ONE barrier)
   tag, barrier (syncthreads | cluster | cluster-relaxed | grid), block_size,
   blocks (cluster: the cluster size), seed, rep (the launch)
-  block, thread  which thread of the launch this row is
-  cycles         end - start around the barrier; in barriers_shared it also
-                 holds the shared-memory load after the barrier
+  block, thread  which thread of the launch this row is; thread < 32 is warp 0,
+                 the only warp whose clock read is surely not early
+  cycles         end - start around the barrier; except in barriers it also
+                 holds the load after the barrier (from shared memory, L2 or DRAM)
 
-Table `barriers` (dgx-spark/barriers/barriers.cu: the kernels of
-barriers-naive.cu, thread 0 of each block only: the real cost)
-  tag, barrier, block_size, blocks, seed, rep, block, cycles
+Table `fence` (dgx-spark/barriers/fence.cu parts: what each fence and each piece
+of cluster.sync() costs, the mean of 1000 back-to-back executions)
+  tag, piece (the PTX or the barrier timed), cluster_size, block_size
+  median_cycles, min_cycles, max_cycles   over the blocks of the cluster
+  median_wait    only for the split piece: the wait on a completed barrier
+
+Table `fence_placement` (dgx-spark/barriers/fence.cu placement: one row per block)
+  tag, piece, cluster_size, block_size, block, cluster, sm, cycles
 
 Table `p2p` (dgx-spark/throughput/p2p.cu: the paper's copy.cu, --bytes from
 rank src to rank dst through DSMEM or global memory)
@@ -117,14 +124,20 @@ TABLES = {
     "op", "width", "stride_bytes", "block_size", "blocks", "steps", "seed", "rep",
     "bytes_per_block", "cycles", "ns", "bytes_per_cycle_per_sm", "gbps_per_sm", "gbps_chip",
   ]),
-  "barriers-naive": ("barriers_naive", [
+  "barriers": ("barriers", [
     "barrier", "block_size", "blocks", "seed", "rep", "block", "thread", "cycles",
   ]),
   "barriers-shared": ("barriers_shared", [
     "barrier", "block_size", "blocks", "seed", "rep", "block", "thread", "cycles",
   ]),
-  "barriers": ("barriers", [
-    "barrier", "block_size", "blocks", "seed", "rep", "block", "cycles",
+  "barriers-l2": ("barriers_l2", [
+    "barrier", "block_size", "blocks", "seed", "rep", "block", "thread", "cycles",
+  ]),
+  "barriers-gmem": ("barriers_gmem", [
+    "barrier", "block_size", "blocks", "seed", "rep", "block", "thread", "cycles",
+  ]),
+  "fence": ("fence", [
+    "piece", "cluster_size", "block_size", "median_cycles", "min_cycles", "max_cycles", "median_wait",
   ]),
   "p2p": ("p2p", [
     "method", "src", "dst", "bytes", "block_size", "seed", "rep",
@@ -174,6 +187,11 @@ def parse(job: sbm.Job):
   if benchmark in LATENCY_COMPONENTS:
     return {"latency": _rows(job, runs, LATENCY_COLUMNS,
                              first=lambda r: {"component": r["benchmark"]})}
+  # fence.cu writes the same benchmark name for its two experiments: only
+  # `placement` has one row per SM.
+  if benchmark == "fence" and "sm" in runs:
+    return {"fence_placement": _rows(job, runs, ["piece", "cluster_size", "block_size", "block",
+                                                 "cluster", "sm", "cycles"])}
   if benchmark in TABLES:
     table, columns = TABLES[benchmark]
     return {table: _rows(job, runs, columns)}

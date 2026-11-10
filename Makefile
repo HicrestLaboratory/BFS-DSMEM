@@ -16,7 +16,7 @@
 NVCC      ?= nvcc
 ARCH      ?= sm_121
 NVCCFLAGS ?= -O3 -arch=$(ARCH)
-EXTRA     ?=
+EXTRA     ?= 
 
 BUILD    := build
 SRC_DIRS := dgx-spark bfs

@@ -22,7 +22,7 @@
 //
 //   Why the load? A barrier compiles to BAR.SYNC.DEFER_BLOCKING: the warp is
 //   not stopped AT the barrier but a few instructions later. A clock read is
-//   not a memory access, so in barriers-naive.cu it can execute before the
+//   not a memory access, so in barriers.cu it can execute before the
 //   barrier is over. A load can not: it has to see the writes made before
 //   the barrier, so it waits for the release, and the warp issues in order,
 //   so the clock read behind it waits too. The price is the load itself:

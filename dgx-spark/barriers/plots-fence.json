@@ -1,0 +1,359 @@
+{
+  "version": 3,
+  "activeTabIndex": 0,
+  "tabs": [
+    {
+      "version": 3,
+      "label": "cluster.sync(): mean of 1000 iterations after warmup",
+      "mode": "grid",
+      "rendererBackend": "matplotlib",
+      "single": {
+        "database": "data",
+        "sql": "SELECT cluster_size, block_size, median_cycles, min_cycles, max_cycles\nFROM fence\nWHERE piece = 'cluster.sync()'",
+        "plotType": "line",
+        "x": "block_size",
+        "y": [
+          "median_cycles"
+        ],
+        "transformScript": "# Nothing to do: one row per (cluster size, block size).\n",
+        "layoutScript": "# One fence: cycles against the threads per block, one panel per cluster size.\nimport matplotlib as mpl\nHOUSE = {\n    \"font.size\": 16, \"axes.titlesize\": 17, \"axes.labelsize\": 16,\n    \"xtick.labelsize\": 13, \"ytick.labelsize\": 13, \"figure.titlesize\": 18,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"lines.linewidth\": 2.2, \"lines.markersize\": 7,\n}\nTITLE = \"cluster.sync(): mean of 1000 iterations after warmup\"\nCOLOR = \"#1f77b4\"\n\n\ndef customize_matplotlib(fig, ax, config):\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(13, 6)\n    axes = fig.subplots(1, 2, sharey=True)\n    sizes = sorted(df[\"block_size\"].unique())\n    x = {s: i for i, s in enumerate(sizes)}   # equal steps: the sizes double\n    for axis, cluster_size in zip(axes, (1, 12)):\n        d = df[df[\"cluster_size\"] == cluster_size].sort_values(\"block_size\")\n        where = [x[s] for s in d[\"block_size\"]]\n        # The line is the median over the blocks; the bars are their min and max:\n        # in a cluster the blocks sit on different TPCs.\n        axis.errorbar(where, d[\"median_cycles\"],\n                      yerr=[d[\"median_cycles\"] - d[\"min_cycles\"], d[\"max_cycles\"] - d[\"median_cycles\"]],\n                      color=COLOR, marker=\"o\", capsize=4)\n        for i, top, value in zip(where, d[\"max_cycles\"], d[\"median_cycles\"]):\n            axis.annotate(f\"{value:.0f}\", (i, top), xytext=(0, 7), textcoords=\"offset points\",\n                          ha=\"center\", fontsize=12, color=\"0.25\")\n        axis.set_xticks(range(len(sizes)))\n        axis.set_xticklabels([str(int(s)) for s in sizes])\n        axis.set_xlabel(\"threads per block\")\n        axis.set_title(\"1 block\" if cluster_size == 1 else f\"cluster of {cluster_size} blocks\")\n        axis.grid(True, axis=\"y\", alpha=0.3)\n    axes[0].set_ylabel(\"cycles\")\n    axes[0].set_ylim(0, df[\"max_cycles\"].max() * 1.15)   # room for the labels\n    fig.suptitle(TITLE)\n"
+      },
+      "grid": {
+        "rows": 1,
+        "cols": 1,
+        "activePanelIndex": 0,
+        "panels": [
+          {
+            "database": "data",
+            "sql": "SELECT cluster_size, block_size, median_cycles, min_cycles, max_cycles\nFROM fence\nWHERE piece = 'cluster.sync()'",
+            "plotType": "line",
+            "x": "block_size",
+            "y": [
+              "median_cycles"
+            ],
+            "transformScript": "# Nothing to do: one row per (cluster size, block size).\n",
+            "layoutScript": "# One fence: cycles against the threads per block, one panel per cluster size.\nimport matplotlib as mpl\nHOUSE = {\n    \"font.size\": 16, \"axes.titlesize\": 17, \"axes.labelsize\": 16,\n    \"xtick.labelsize\": 13, \"ytick.labelsize\": 13, \"figure.titlesize\": 18,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"lines.linewidth\": 2.2, \"lines.markersize\": 7,\n}\nTITLE = \"cluster.sync(): mean of 1000 iterations after warmup\"\nCOLOR = \"#1f77b4\"\n\n\ndef customize_matplotlib(fig, ax, config):\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(13, 6)\n    axes = fig.subplots(1, 2, sharey=True)\n    sizes = sorted(df[\"block_size\"].unique())\n    x = {s: i for i, s in enumerate(sizes)}   # equal steps: the sizes double\n    for axis, cluster_size in zip(axes, (1, 12)):\n        d = df[df[\"cluster_size\"] == cluster_size].sort_values(\"block_size\")\n        where = [x[s] for s in d[\"block_size\"]]\n        # The line is the median over the blocks; the bars are their min and max:\n        # in a cluster the blocks sit on different TPCs.\n        axis.errorbar(where, d[\"median_cycles\"],\n                      yerr=[d[\"median_cycles\"] - d[\"min_cycles\"], d[\"max_cycles\"] - d[\"median_cycles\"]],\n                      color=COLOR, marker=\"o\", capsize=4)\n        for i, top, value in zip(where, d[\"max_cycles\"], d[\"median_cycles\"]):\n            axis.annotate(f\"{value:.0f}\", (i, top), xytext=(0, 7), textcoords=\"offset points\",\n                          ha=\"center\", fontsize=12, color=\"0.25\")\n        axis.set_xticks(range(len(sizes)))\n        axis.set_xticklabels([str(int(s)) for s in sizes])\n        axis.set_xlabel(\"threads per block\")\n        axis.set_title(\"1 block\" if cluster_size == 1 else f\"cluster of {cluster_size} blocks\")\n        axis.grid(True, axis=\"y\", alpha=0.3)\n    axes[0].set_ylabel(\"cycles\")\n    axes[0].set_ylim(0, df[\"max_cycles\"].max() * 1.15)   # room for the labels\n    fig.suptitle(TITLE)\n"
+          }
+        ]
+      }
+    },
+    {
+      "version": 3,
+      "label": "cluster.sync() relaxed: mean of 1000 iterations after warmup",
+      "mode": "grid",
+      "rendererBackend": "matplotlib",
+      "single": {
+        "database": "data",
+        "sql": "SELECT cluster_size, block_size, median_cycles, min_cycles, max_cycles\nFROM fence\nWHERE piece = 'relaxed arrive + wait'",
+        "plotType": "line",
+        "x": "block_size",
+        "y": [
+          "median_cycles"
+        ],
+        "transformScript": "# Nothing to do: one row per (cluster size, block size).\n",
+        "layoutScript": "# One fence: cycles against the threads per block, one panel per cluster size.\nimport matplotlib as mpl\nHOUSE = {\n    \"font.size\": 16, \"axes.titlesize\": 17, \"axes.labelsize\": 16,\n    \"xtick.labelsize\": 13, \"ytick.labelsize\": 13, \"figure.titlesize\": 18,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"lines.linewidth\": 2.2, \"lines.markersize\": 7,\n}\nTITLE = \"cluster.sync() relaxed: mean of 1000 iterations after warmup\"\nCOLOR = \"#1f77b4\"\n\n\ndef customize_matplotlib(fig, ax, config):\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(13, 6)\n    axes = fig.subplots(1, 2, sharey=True)\n    sizes = sorted(df[\"block_size\"].unique())\n    x = {s: i for i, s in enumerate(sizes)}   # equal steps: the sizes double\n    for axis, cluster_size in zip(axes, (1, 12)):\n        d = df[df[\"cluster_size\"] == cluster_size].sort_values(\"block_size\")\n        where = [x[s] for s in d[\"block_size\"]]\n        # The line is the median over the blocks; the bars are their min and max:\n        # in a cluster the blocks sit on different TPCs.\n        axis.errorbar(where, d[\"median_cycles\"],\n                      yerr=[d[\"median_cycles\"] - d[\"min_cycles\"], d[\"max_cycles\"] - d[\"median_cycles\"]],\n                      color=COLOR, marker=\"o\", capsize=4)\n        for i, top, value in zip(where, d[\"max_cycles\"], d[\"median_cycles\"]):\n            axis.annotate(f\"{value:.0f}\", (i, top), xytext=(0, 7), textcoords=\"offset points\",\n                          ha=\"center\", fontsize=12, color=\"0.25\")\n        axis.set_xticks(range(len(sizes)))\n        axis.set_xticklabels([str(int(s)) for s in sizes])\n        axis.set_xlabel(\"threads per block\")\n        axis.set_title(\"1 block\" if cluster_size == 1 else f\"cluster of {cluster_size} blocks\")\n        axis.grid(True, axis=\"y\", alpha=0.3)\n    axes[0].set_ylabel(\"cycles\")\n    axes[0].set_ylim(0, df[\"max_cycles\"].max() * 1.15)   # room for the labels\n    fig.suptitle(TITLE)\n"
+      },
+      "grid": {
+        "rows": 1,
+        "cols": 1,
+        "activePanelIndex": 0,
+        "panels": [
+          {
+            "database": "data",
+            "sql": "SELECT cluster_size, block_size, median_cycles, min_cycles, max_cycles\nFROM fence\nWHERE piece = 'relaxed arrive + wait'",
+            "plotType": "line",
+            "x": "block_size",
+            "y": [
+              "median_cycles"
+            ],
+            "transformScript": "# Nothing to do: one row per (cluster size, block size).\n",
+            "layoutScript": "# One fence: cycles against the threads per block, one panel per cluster size.\nimport matplotlib as mpl\nHOUSE = {\n    \"font.size\": 16, \"axes.titlesize\": 17, \"axes.labelsize\": 16,\n    \"xtick.labelsize\": 13, \"ytick.labelsize\": 13, \"figure.titlesize\": 18,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"lines.linewidth\": 2.2, \"lines.markersize\": 7,\n}\nTITLE = \"cluster.sync() relaxed: mean of 1000 iterations after warmup\"\nCOLOR = \"#1f77b4\"\n\n\ndef customize_matplotlib(fig, ax, config):\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(13, 6)\n    axes = fig.subplots(1, 2, sharey=True)\n    sizes = sorted(df[\"block_size\"].unique())\n    x = {s: i for i, s in enumerate(sizes)}   # equal steps: the sizes double\n    for axis, cluster_size in zip(axes, (1, 12)):\n        d = df[df[\"cluster_size\"] == cluster_size].sort_values(\"block_size\")\n        where = [x[s] for s in d[\"block_size\"]]\n        # The line is the median over the blocks; the bars are their min and max:\n        # in a cluster the blocks sit on different TPCs.\n        axis.errorbar(where, d[\"median_cycles\"],\n                      yerr=[d[\"median_cycles\"] - d[\"min_cycles\"], d[\"max_cycles\"] - d[\"median_cycles\"]],\n                      color=COLOR, marker=\"o\", capsize=4)\n        for i, top, value in zip(where, d[\"max_cycles\"], d[\"median_cycles\"]):\n            axis.annotate(f\"{value:.0f}\", (i, top), xytext=(0, 7), textcoords=\"offset points\",\n                          ha=\"center\", fontsize=12, color=\"0.25\")\n        axis.set_xticks(range(len(sizes)))\n        axis.set_xticklabels([str(int(s)) for s in sizes])\n        axis.set_xlabel(\"threads per block\")\n        axis.set_title(\"1 block\" if cluster_size == 1 else f\"cluster of {cluster_size} blocks\")\n        axis.grid(True, axis=\"y\", alpha=0.3)\n    axes[0].set_ylabel(\"cycles\")\n    axes[0].set_ylim(0, df[\"max_cycles\"].max() * 1.15)   # room for the labels\n    fig.suptitle(TITLE)\n"
+          }
+        ]
+      }
+    },
+    {
+      "version": 3,
+      "label": "fence.acq_rel.cta: mean of 1000 iterations after warmup",
+      "mode": "grid",
+      "rendererBackend": "matplotlib",
+      "single": {
+        "database": "data",
+        "sql": "SELECT cluster_size, block_size, median_cycles, min_cycles, max_cycles\nFROM fence\nWHERE piece = 'fence.acq_rel.cta'",
+        "plotType": "line",
+        "x": "block_size",
+        "y": [
+          "median_cycles"
+        ],
+        "transformScript": "# Nothing to do: one row per (cluster size, block size).\n",
+        "layoutScript": "# One fence: cycles against the threads per block, one panel per cluster size.\nimport matplotlib as mpl\nHOUSE = {\n    \"font.size\": 16, \"axes.titlesize\": 17, \"axes.labelsize\": 16,\n    \"xtick.labelsize\": 13, \"ytick.labelsize\": 13, \"figure.titlesize\": 18,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"lines.linewidth\": 2.2, \"lines.markersize\": 7,\n}\nTITLE = \"fence.acq_rel.cta: mean of 1000 iterations after warmup\"\nCOLOR = \"#1f77b4\"\n\n\ndef customize_matplotlib(fig, ax, config):\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(13, 6)\n    axes = fig.subplots(1, 2, sharey=True)\n    sizes = sorted(df[\"block_size\"].unique())\n    x = {s: i for i, s in enumerate(sizes)}   # equal steps: the sizes double\n    for axis, cluster_size in zip(axes, (1, 12)):\n        d = df[df[\"cluster_size\"] == cluster_size].sort_values(\"block_size\")\n        where = [x[s] for s in d[\"block_size\"]]\n        # The line is the median over the blocks; the bars are their min and max:\n        # in a cluster the blocks sit on different TPCs.\n        axis.errorbar(where, d[\"median_cycles\"],\n                      yerr=[d[\"median_cycles\"] - d[\"min_cycles\"], d[\"max_cycles\"] - d[\"median_cycles\"]],\n                      color=COLOR, marker=\"o\", capsize=4)\n        for i, top, value in zip(where, d[\"max_cycles\"], d[\"median_cycles\"]):\n            axis.annotate(f\"{value:.0f}\", (i, top), xytext=(0, 7), textcoords=\"offset points\",\n                          ha=\"center\", fontsize=12, color=\"0.25\")\n        axis.set_xticks(range(len(sizes)))\n        axis.set_xticklabels([str(int(s)) for s in sizes])\n        axis.set_xlabel(\"threads per block\")\n        axis.set_title(\"1 block\" if cluster_size == 1 else f\"cluster of {cluster_size} blocks\")\n        axis.grid(True, axis=\"y\", alpha=0.3)\n    axes[0].set_ylabel(\"cycles\")\n    axes[0].set_ylim(0, df[\"max_cycles\"].max() * 1.15)   # room for the labels\n    fig.suptitle(TITLE)\n"
+      },
+      "grid": {
+        "rows": 1,
+        "cols": 1,
+        "activePanelIndex": 0,
+        "panels": [
+          {
+            "database": "data",
+            "sql": "SELECT cluster_size, block_size, median_cycles, min_cycles, max_cycles\nFROM fence\nWHERE piece = 'fence.acq_rel.cta'",
+            "plotType": "line",
+            "x": "block_size",
+            "y": [
+              "median_cycles"
+            ],
+            "transformScript": "# Nothing to do: one row per (cluster size, block size).\n",
+            "layoutScript": "# One fence: cycles against the threads per block, one panel per cluster size.\nimport matplotlib as mpl\nHOUSE = {\n    \"font.size\": 16, \"axes.titlesize\": 17, \"axes.labelsize\": 16,\n    \"xtick.labelsize\": 13, \"ytick.labelsize\": 13, \"figure.titlesize\": 18,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"lines.linewidth\": 2.2, \"lines.markersize\": 7,\n}\nTITLE = \"fence.acq_rel.cta: mean of 1000 iterations after warmup\"\nCOLOR = \"#1f77b4\"\n\n\ndef customize_matplotlib(fig, ax, config):\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(13, 6)\n    axes = fig.subplots(1, 2, sharey=True)\n    sizes = sorted(df[\"block_size\"].unique())\n    x = {s: i for i, s in enumerate(sizes)}   # equal steps: the sizes double\n    for axis, cluster_size in zip(axes, (1, 12)):\n        d = df[df[\"cluster_size\"] == cluster_size].sort_values(\"block_size\")\n        where = [x[s] for s in d[\"block_size\"]]\n        # The line is the median over the blocks; the bars are their min and max:\n        # in a cluster the blocks sit on different TPCs.\n        axis.errorbar(where, d[\"median_cycles\"],\n                      yerr=[d[\"median_cycles\"] - d[\"min_cycles\"], d[\"max_cycles\"] - d[\"median_cycles\"]],\n                      color=COLOR, marker=\"o\", capsize=4)\n        for i, top, value in zip(where, d[\"max_cycles\"], d[\"median_cycles\"]):\n            axis.annotate(f\"{value:.0f}\", (i, top), xytext=(0, 7), textcoords=\"offset points\",\n                          ha=\"center\", fontsize=12, color=\"0.25\")\n        axis.set_xticks(range(len(sizes)))\n        axis.set_xticklabels([str(int(s)) for s in sizes])\n        axis.set_xlabel(\"threads per block\")\n        axis.set_title(\"1 block\" if cluster_size == 1 else f\"cluster of {cluster_size} blocks\")\n        axis.grid(True, axis=\"y\", alpha=0.3)\n    axes[0].set_ylabel(\"cycles\")\n    axes[0].set_ylim(0, df[\"max_cycles\"].max() * 1.15)   # room for the labels\n    fig.suptitle(TITLE)\n"
+          }
+        ]
+      }
+    },
+    {
+      "version": 3,
+      "label": "fence.acq_rel.cluster: mean of 1000 iterations after warmup",
+      "mode": "grid",
+      "rendererBackend": "matplotlib",
+      "single": {
+        "database": "data",
+        "sql": "SELECT cluster_size, block_size, median_cycles, min_cycles, max_cycles\nFROM fence\nWHERE piece = 'fence.acq_rel.cluster'",
+        "plotType": "line",
+        "x": "block_size",
+        "y": [
+          "median_cycles"
+        ],
+        "transformScript": "# Nothing to do: one row per (cluster size, block size).\n",
+        "layoutScript": "# One fence: cycles against the threads per block, one panel per cluster size.\nimport matplotlib as mpl\nHOUSE = {\n    \"font.size\": 16, \"axes.titlesize\": 17, \"axes.labelsize\": 16,\n    \"xtick.labelsize\": 13, \"ytick.labelsize\": 13, \"figure.titlesize\": 18,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"lines.linewidth\": 2.2, \"lines.markersize\": 7,\n}\nTITLE = \"fence.acq_rel.cluster: mean of 1000 iterations after warmup\"\nCOLOR = \"#1f77b4\"\n\n\ndef customize_matplotlib(fig, ax, config):\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(13, 6)\n    axes = fig.subplots(1, 2, sharey=True)\n    sizes = sorted(df[\"block_size\"].unique())\n    x = {s: i for i, s in enumerate(sizes)}   # equal steps: the sizes double\n    for axis, cluster_size in zip(axes, (1, 12)):\n        d = df[df[\"cluster_size\"] == cluster_size].sort_values(\"block_size\")\n        where = [x[s] for s in d[\"block_size\"]]\n        # The line is the median over the blocks; the bars are their min and max:\n        # in a cluster the blocks sit on different TPCs.\n        axis.errorbar(where, d[\"median_cycles\"],\n                      yerr=[d[\"median_cycles\"] - d[\"min_cycles\"], d[\"max_cycles\"] - d[\"median_cycles\"]],\n                      color=COLOR, marker=\"o\", capsize=4)\n        for i, top, value in zip(where, d[\"max_cycles\"], d[\"median_cycles\"]):\n            axis.annotate(f\"{value:.0f}\", (i, top), xytext=(0, 7), textcoords=\"offset points\",\n                          ha=\"center\", fontsize=12, color=\"0.25\")\n        axis.set_xticks(range(len(sizes)))\n        axis.set_xticklabels([str(int(s)) for s in sizes])\n        axis.set_xlabel(\"threads per block\")\n        axis.set_title(\"1 block\" if cluster_size == 1 else f\"cluster of {cluster_size} blocks\")\n        axis.grid(True, axis=\"y\", alpha=0.3)\n    axes[0].set_ylabel(\"cycles\")\n    axes[0].set_ylim(0, df[\"max_cycles\"].max() * 1.15)   # room for the labels\n    fig.suptitle(TITLE)\n"
+      },
+      "grid": {
+        "rows": 1,
+        "cols": 1,
+        "activePanelIndex": 0,
+        "panels": [
+          {
+            "database": "data",
+            "sql": "SELECT cluster_size, block_size, median_cycles, min_cycles, max_cycles\nFROM fence\nWHERE piece = 'fence.acq_rel.cluster'",
+            "plotType": "line",
+            "x": "block_size",
+            "y": [
+              "median_cycles"
+            ],
+            "transformScript": "# Nothing to do: one row per (cluster size, block size).\n",
+            "layoutScript": "# One fence: cycles against the threads per block, one panel per cluster size.\nimport matplotlib as mpl\nHOUSE = {\n    \"font.size\": 16, \"axes.titlesize\": 17, \"axes.labelsize\": 16,\n    \"xtick.labelsize\": 13, \"ytick.labelsize\": 13, \"figure.titlesize\": 18,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"lines.linewidth\": 2.2, \"lines.markersize\": 7,\n}\nTITLE = \"fence.acq_rel.cluster: mean of 1000 iterations after warmup\"\nCOLOR = \"#1f77b4\"\n\n\ndef customize_matplotlib(fig, ax, config):\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(13, 6)\n    axes = fig.subplots(1, 2, sharey=True)\n    sizes = sorted(df[\"block_size\"].unique())\n    x = {s: i for i, s in enumerate(sizes)}   # equal steps: the sizes double\n    for axis, cluster_size in zip(axes, (1, 12)):\n        d = df[df[\"cluster_size\"] == cluster_size].sort_values(\"block_size\")\n        where = [x[s] for s in d[\"block_size\"]]\n        # The line is the median over the blocks; the bars are their min and max:\n        # in a cluster the blocks sit on different TPCs.\n        axis.errorbar(where, d[\"median_cycles\"],\n                      yerr=[d[\"median_cycles\"] - d[\"min_cycles\"], d[\"max_cycles\"] - d[\"median_cycles\"]],\n                      color=COLOR, marker=\"o\", capsize=4)\n        for i, top, value in zip(where, d[\"max_cycles\"], d[\"median_cycles\"]):\n            axis.annotate(f\"{value:.0f}\", (i, top), xytext=(0, 7), textcoords=\"offset points\",\n                          ha=\"center\", fontsize=12, color=\"0.25\")\n        axis.set_xticks(range(len(sizes)))\n        axis.set_xticklabels([str(int(s)) for s in sizes])\n        axis.set_xlabel(\"threads per block\")\n        axis.set_title(\"1 block\" if cluster_size == 1 else f\"cluster of {cluster_size} blocks\")\n        axis.grid(True, axis=\"y\", alpha=0.3)\n    axes[0].set_ylabel(\"cycles\")\n    axes[0].set_ylim(0, df[\"max_cycles\"].max() * 1.15)   # room for the labels\n    fig.suptitle(TITLE)\n"
+          }
+        ]
+      }
+    },
+    {
+      "version": 3,
+      "label": "fence.acq_rel.gpu: mean of 1000 iterations after warmup",
+      "mode": "grid",
+      "rendererBackend": "matplotlib",
+      "single": {
+        "database": "data",
+        "sql": "SELECT cluster_size, block_size, median_cycles, min_cycles, max_cycles\nFROM fence\nWHERE piece = 'fence.acq_rel.gpu'",
+        "plotType": "line",
+        "x": "block_size",
+        "y": [
+          "median_cycles"
+        ],
+        "transformScript": "# Nothing to do: one row per (cluster size, block size).\n",
+        "layoutScript": "# One fence: cycles against the threads per block, one panel per cluster size.\nimport matplotlib as mpl\nHOUSE = {\n    \"font.size\": 16, \"axes.titlesize\": 17, \"axes.labelsize\": 16,\n    \"xtick.labelsize\": 13, \"ytick.labelsize\": 13, \"figure.titlesize\": 18,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"lines.linewidth\": 2.2, \"lines.markersize\": 7,\n}\nTITLE = \"fence.acq_rel.gpu: mean of 1000 iterations after warmup\"\nCOLOR = \"#1f77b4\"\n\n\ndef customize_matplotlib(fig, ax, config):\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(13, 6)\n    axes = fig.subplots(1, 2, sharey=True)\n    sizes = sorted(df[\"block_size\"].unique())\n    x = {s: i for i, s in enumerate(sizes)}   # equal steps: the sizes double\n    for axis, cluster_size in zip(axes, (1, 12)):\n        d = df[df[\"cluster_size\"] == cluster_size].sort_values(\"block_size\")\n        where = [x[s] for s in d[\"block_size\"]]\n        # The line is the median over the blocks; the bars are their min and max:\n        # in a cluster the blocks sit on different TPCs.\n        axis.errorbar(where, d[\"median_cycles\"],\n                      yerr=[d[\"median_cycles\"] - d[\"min_cycles\"], d[\"max_cycles\"] - d[\"median_cycles\"]],\n                      color=COLOR, marker=\"o\", capsize=4)\n        for i, top, value in zip(where, d[\"max_cycles\"], d[\"median_cycles\"]):\n            axis.annotate(f\"{value:.0f}\", (i, top), xytext=(0, 7), textcoords=\"offset points\",\n                          ha=\"center\", fontsize=12, color=\"0.25\")\n        axis.set_xticks(range(len(sizes)))\n        axis.set_xticklabels([str(int(s)) for s in sizes])\n        axis.set_xlabel(\"threads per block\")\n        axis.set_title(\"1 block\" if cluster_size == 1 else f\"cluster of {cluster_size} blocks\")\n        axis.grid(True, axis=\"y\", alpha=0.3)\n    axes[0].set_ylabel(\"cycles\")\n    axes[0].set_ylim(0, df[\"max_cycles\"].max() * 1.15)   # room for the labels\n    fig.suptitle(TITLE)\n"
+      },
+      "grid": {
+        "rows": 1,
+        "cols": 1,
+        "activePanelIndex": 0,
+        "panels": [
+          {
+            "database": "data",
+            "sql": "SELECT cluster_size, block_size, median_cycles, min_cycles, max_cycles\nFROM fence\nWHERE piece = 'fence.acq_rel.gpu'",
+            "plotType": "line",
+            "x": "block_size",
+            "y": [
+              "median_cycles"
+            ],
+            "transformScript": "# Nothing to do: one row per (cluster size, block size).\n",
+            "layoutScript": "# One fence: cycles against the threads per block, one panel per cluster size.\nimport matplotlib as mpl\nHOUSE = {\n    \"font.size\": 16, \"axes.titlesize\": 17, \"axes.labelsize\": 16,\n    \"xtick.labelsize\": 13, \"ytick.labelsize\": 13, \"figure.titlesize\": 18,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"lines.linewidth\": 2.2, \"lines.markersize\": 7,\n}\nTITLE = \"fence.acq_rel.gpu: mean of 1000 iterations after warmup\"\nCOLOR = \"#1f77b4\"\n\n\ndef customize_matplotlib(fig, ax, config):\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(13, 6)\n    axes = fig.subplots(1, 2, sharey=True)\n    sizes = sorted(df[\"block_size\"].unique())\n    x = {s: i for i, s in enumerate(sizes)}   # equal steps: the sizes double\n    for axis, cluster_size in zip(axes, (1, 12)):\n        d = df[df[\"cluster_size\"] == cluster_size].sort_values(\"block_size\")\n        where = [x[s] for s in d[\"block_size\"]]\n        # The line is the median over the blocks; the bars are their min and max:\n        # in a cluster the blocks sit on different TPCs.\n        axis.errorbar(where, d[\"median_cycles\"],\n                      yerr=[d[\"median_cycles\"] - d[\"min_cycles\"], d[\"max_cycles\"] - d[\"median_cycles\"]],\n                      color=COLOR, marker=\"o\", capsize=4)\n        for i, top, value in zip(where, d[\"max_cycles\"], d[\"median_cycles\"]):\n            axis.annotate(f\"{value:.0f}\", (i, top), xytext=(0, 7), textcoords=\"offset points\",\n                          ha=\"center\", fontsize=12, color=\"0.25\")\n        axis.set_xticks(range(len(sizes)))\n        axis.set_xticklabels([str(int(s)) for s in sizes])\n        axis.set_xlabel(\"threads per block\")\n        axis.set_title(\"1 block\" if cluster_size == 1 else f\"cluster of {cluster_size} blocks\")\n        axis.grid(True, axis=\"y\", alpha=0.3)\n    axes[0].set_ylabel(\"cycles\")\n    axes[0].set_ylim(0, df[\"max_cycles\"].max() * 1.15)   # room for the labels\n    fig.suptitle(TITLE)\n"
+          }
+        ]
+      }
+    },
+    {
+      "version": 3,
+      "label": "fence.release.cluster: mean of 1000 iterations after warmup",
+      "mode": "grid",
+      "rendererBackend": "matplotlib",
+      "single": {
+        "database": "data",
+        "sql": "SELECT cluster_size, block_size, median_cycles, min_cycles, max_cycles\nFROM fence\nWHERE piece = 'fence.release.cluster'",
+        "plotType": "line",
+        "x": "block_size",
+        "y": [
+          "median_cycles"
+        ],
+        "transformScript": "# Nothing to do: one row per (cluster size, block size).\n",
+        "layoutScript": "# One fence: cycles against the threads per block, one panel per cluster size.\nimport matplotlib as mpl\nHOUSE = {\n    \"font.size\": 16, \"axes.titlesize\": 17, \"axes.labelsize\": 16,\n    \"xtick.labelsize\": 13, \"ytick.labelsize\": 13, \"figure.titlesize\": 18,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"lines.linewidth\": 2.2, \"lines.markersize\": 7,\n}\nTITLE = \"fence.release.cluster: mean of 1000 iterations after warmup\"\nCOLOR = \"#1f77b4\"\n\n\ndef customize_matplotlib(fig, ax, config):\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(13, 6)\n    axes = fig.subplots(1, 2, sharey=True)\n    sizes = sorted(df[\"block_size\"].unique())\n    x = {s: i for i, s in enumerate(sizes)}   # equal steps: the sizes double\n    for axis, cluster_size in zip(axes, (1, 12)):\n        d = df[df[\"cluster_size\"] == cluster_size].sort_values(\"block_size\")\n        where = [x[s] for s in d[\"block_size\"]]\n        # The line is the median over the blocks; the bars are their min and max:\n        # in a cluster the blocks sit on different TPCs.\n        axis.errorbar(where, d[\"median_cycles\"],\n                      yerr=[d[\"median_cycles\"] - d[\"min_cycles\"], d[\"max_cycles\"] - d[\"median_cycles\"]],\n                      color=COLOR, marker=\"o\", capsize=4)\n        for i, top, value in zip(where, d[\"max_cycles\"], d[\"median_cycles\"]):\n            axis.annotate(f\"{value:.0f}\", (i, top), xytext=(0, 7), textcoords=\"offset points\",\n                          ha=\"center\", fontsize=12, color=\"0.25\")\n        axis.set_xticks(range(len(sizes)))\n        axis.set_xticklabels([str(int(s)) for s in sizes])\n        axis.set_xlabel(\"threads per block\")\n        axis.set_title(\"1 block\" if cluster_size == 1 else f\"cluster of {cluster_size} blocks\")\n        axis.grid(True, axis=\"y\", alpha=0.3)\n    axes[0].set_ylabel(\"cycles\")\n    axes[0].set_ylim(0, df[\"max_cycles\"].max() * 1.15)   # room for the labels\n    fig.suptitle(TITLE)\n"
+      },
+      "grid": {
+        "rows": 1,
+        "cols": 1,
+        "activePanelIndex": 0,
+        "panels": [
+          {
+            "database": "data",
+            "sql": "SELECT cluster_size, block_size, median_cycles, min_cycles, max_cycles\nFROM fence\nWHERE piece = 'fence.release.cluster'",
+            "plotType": "line",
+            "x": "block_size",
+            "y": [
+              "median_cycles"
+            ],
+            "transformScript": "# Nothing to do: one row per (cluster size, block size).\n",
+            "layoutScript": "# One fence: cycles against the threads per block, one panel per cluster size.\nimport matplotlib as mpl\nHOUSE = {\n    \"font.size\": 16, \"axes.titlesize\": 17, \"axes.labelsize\": 16,\n    \"xtick.labelsize\": 13, \"ytick.labelsize\": 13, \"figure.titlesize\": 18,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"lines.linewidth\": 2.2, \"lines.markersize\": 7,\n}\nTITLE = \"fence.release.cluster: mean of 1000 iterations after warmup\"\nCOLOR = \"#1f77b4\"\n\n\ndef customize_matplotlib(fig, ax, config):\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(13, 6)\n    axes = fig.subplots(1, 2, sharey=True)\n    sizes = sorted(df[\"block_size\"].unique())\n    x = {s: i for i, s in enumerate(sizes)}   # equal steps: the sizes double\n    for axis, cluster_size in zip(axes, (1, 12)):\n        d = df[df[\"cluster_size\"] == cluster_size].sort_values(\"block_size\")\n        where = [x[s] for s in d[\"block_size\"]]\n        # The line is the median over the blocks; the bars are their min and max:\n        # in a cluster the blocks sit on different TPCs.\n        axis.errorbar(where, d[\"median_cycles\"],\n                      yerr=[d[\"median_cycles\"] - d[\"min_cycles\"], d[\"max_cycles\"] - d[\"median_cycles\"]],\n                      color=COLOR, marker=\"o\", capsize=4)\n        for i, top, value in zip(where, d[\"max_cycles\"], d[\"median_cycles\"]):\n            axis.annotate(f\"{value:.0f}\", (i, top), xytext=(0, 7), textcoords=\"offset points\",\n                          ha=\"center\", fontsize=12, color=\"0.25\")\n        axis.set_xticks(range(len(sizes)))\n        axis.set_xticklabels([str(int(s)) for s in sizes])\n        axis.set_xlabel(\"threads per block\")\n        axis.set_title(\"1 block\" if cluster_size == 1 else f\"cluster of {cluster_size} blocks\")\n        axis.grid(True, axis=\"y\", alpha=0.3)\n    axes[0].set_ylabel(\"cycles\")\n    axes[0].set_ylim(0, df[\"max_cycles\"].max() * 1.15)   # room for the labels\n    fig.suptitle(TITLE)\n"
+          }
+        ]
+      }
+    },
+    {
+      "version": 3,
+      "label": "fence.acquire.cluster: mean of 1000 iterations after warmup",
+      "mode": "grid",
+      "rendererBackend": "matplotlib",
+      "single": {
+        "database": "data",
+        "sql": "SELECT cluster_size, block_size, median_cycles, min_cycles, max_cycles\nFROM fence\nWHERE piece = 'fence.acquire.cluster'",
+        "plotType": "line",
+        "x": "block_size",
+        "y": [
+          "median_cycles"
+        ],
+        "transformScript": "# Nothing to do: one row per (cluster size, block size).\n",
+        "layoutScript": "# One fence: cycles against the threads per block, one panel per cluster size.\nimport matplotlib as mpl\nHOUSE = {\n    \"font.size\": 16, \"axes.titlesize\": 17, \"axes.labelsize\": 16,\n    \"xtick.labelsize\": 13, \"ytick.labelsize\": 13, \"figure.titlesize\": 18,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"lines.linewidth\": 2.2, \"lines.markersize\": 7,\n}\nTITLE = \"fence.acquire.cluster: mean of 1000 iterations after warmup\"\nCOLOR = \"#1f77b4\"\n\n\ndef customize_matplotlib(fig, ax, config):\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(13, 6)\n    axes = fig.subplots(1, 2, sharey=True)\n    sizes = sorted(df[\"block_size\"].unique())\n    x = {s: i for i, s in enumerate(sizes)}   # equal steps: the sizes double\n    for axis, cluster_size in zip(axes, (1, 12)):\n        d = df[df[\"cluster_size\"] == cluster_size].sort_values(\"block_size\")\n        where = [x[s] for s in d[\"block_size\"]]\n        # The line is the median over the blocks; the bars are their min and max:\n        # in a cluster the blocks sit on different TPCs.\n        axis.errorbar(where, d[\"median_cycles\"],\n                      yerr=[d[\"median_cycles\"] - d[\"min_cycles\"], d[\"max_cycles\"] - d[\"median_cycles\"]],\n                      color=COLOR, marker=\"o\", capsize=4)\n        for i, top, value in zip(where, d[\"max_cycles\"], d[\"median_cycles\"]):\n            axis.annotate(f\"{value:.0f}\", (i, top), xytext=(0, 7), textcoords=\"offset points\",\n                          ha=\"center\", fontsize=12, color=\"0.25\")\n        axis.set_xticks(range(len(sizes)))\n        axis.set_xticklabels([str(int(s)) for s in sizes])\n        axis.set_xlabel(\"threads per block\")\n        axis.set_title(\"1 block\" if cluster_size == 1 else f\"cluster of {cluster_size} blocks\")\n        axis.grid(True, axis=\"y\", alpha=0.3)\n    axes[0].set_ylabel(\"cycles\")\n    axes[0].set_ylim(0, df[\"max_cycles\"].max() * 1.15)   # room for the labels\n    fig.suptitle(TITLE)\n"
+      },
+      "grid": {
+        "rows": 1,
+        "cols": 1,
+        "activePanelIndex": 0,
+        "panels": [
+          {
+            "database": "data",
+            "sql": "SELECT cluster_size, block_size, median_cycles, min_cycles, max_cycles\nFROM fence\nWHERE piece = 'fence.acquire.cluster'",
+            "plotType": "line",
+            "x": "block_size",
+            "y": [
+              "median_cycles"
+            ],
+            "transformScript": "# Nothing to do: one row per (cluster size, block size).\n",
+            "layoutScript": "# One fence: cycles against the threads per block, one panel per cluster size.\nimport matplotlib as mpl\nHOUSE = {\n    \"font.size\": 16, \"axes.titlesize\": 17, \"axes.labelsize\": 16,\n    \"xtick.labelsize\": 13, \"ytick.labelsize\": 13, \"figure.titlesize\": 18,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"lines.linewidth\": 2.2, \"lines.markersize\": 7,\n}\nTITLE = \"fence.acquire.cluster: mean of 1000 iterations after warmup\"\nCOLOR = \"#1f77b4\"\n\n\ndef customize_matplotlib(fig, ax, config):\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(13, 6)\n    axes = fig.subplots(1, 2, sharey=True)\n    sizes = sorted(df[\"block_size\"].unique())\n    x = {s: i for i, s in enumerate(sizes)}   # equal steps: the sizes double\n    for axis, cluster_size in zip(axes, (1, 12)):\n        d = df[df[\"cluster_size\"] == cluster_size].sort_values(\"block_size\")\n        where = [x[s] for s in d[\"block_size\"]]\n        # The line is the median over the blocks; the bars are their min and max:\n        # in a cluster the blocks sit on different TPCs.\n        axis.errorbar(where, d[\"median_cycles\"],\n                      yerr=[d[\"median_cycles\"] - d[\"min_cycles\"], d[\"max_cycles\"] - d[\"median_cycles\"]],\n                      color=COLOR, marker=\"o\", capsize=4)\n        for i, top, value in zip(where, d[\"max_cycles\"], d[\"median_cycles\"]):\n            axis.annotate(f\"{value:.0f}\", (i, top), xytext=(0, 7), textcoords=\"offset points\",\n                          ha=\"center\", fontsize=12, color=\"0.25\")\n        axis.set_xticks(range(len(sizes)))\n        axis.set_xticklabels([str(int(s)) for s in sizes])\n        axis.set_xlabel(\"threads per block\")\n        axis.set_title(\"1 block\" if cluster_size == 1 else f\"cluster of {cluster_size} blocks\")\n        axis.grid(True, axis=\"y\", alpha=0.3)\n    axes[0].set_ylabel(\"cycles\")\n    axes[0].set_ylim(0, df[\"max_cycles\"].max() * 1.15)   # room for the labels\n    fig.suptitle(TITLE)\n"
+          }
+        ]
+      }
+    },
+    {
+      "version": 3,
+      "label": "fence.release.sync_restrict::shared::cta.cluster: mean of 1000 iterations after warmup",
+      "mode": "grid",
+      "rendererBackend": "matplotlib",
+      "single": {
+        "database": "data",
+        "sql": "SELECT cluster_size, block_size, median_cycles, min_cycles, max_cycles\nFROM fence\nWHERE piece = 'fence.release.sync_restrict::shared::cta.cluster'",
+        "plotType": "line",
+        "x": "block_size",
+        "y": [
+          "median_cycles"
+        ],
+        "transformScript": "# Nothing to do: one row per (cluster size, block size).\n",
+        "layoutScript": "# One fence: cycles against the threads per block, one panel per cluster size.\nimport matplotlib as mpl\nHOUSE = {\n    \"font.size\": 16, \"axes.titlesize\": 17, \"axes.labelsize\": 16,\n    \"xtick.labelsize\": 13, \"ytick.labelsize\": 13, \"figure.titlesize\": 18,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"lines.linewidth\": 2.2, \"lines.markersize\": 7,\n}\nTITLE = \"fence.release.sync_restrict::shared::cta.cluster: mean of 1000 iterations after warmup\"\nCOLOR = \"#1f77b4\"\n\n\ndef customize_matplotlib(fig, ax, config):\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(13, 6)\n    axes = fig.subplots(1, 2, sharey=True)\n    sizes = sorted(df[\"block_size\"].unique())\n    x = {s: i for i, s in enumerate(sizes)}   # equal steps: the sizes double\n    for axis, cluster_size in zip(axes, (1, 12)):\n        d = df[df[\"cluster_size\"] == cluster_size].sort_values(\"block_size\")\n        where = [x[s] for s in d[\"block_size\"]]\n        # The line is the median over the blocks; the bars are their min and max:\n        # in a cluster the blocks sit on different TPCs.\n        axis.errorbar(where, d[\"median_cycles\"],\n                      yerr=[d[\"median_cycles\"] - d[\"min_cycles\"], d[\"max_cycles\"] - d[\"median_cycles\"]],\n                      color=COLOR, marker=\"o\", capsize=4)\n        for i, top, value in zip(where, d[\"max_cycles\"], d[\"median_cycles\"]):\n            axis.annotate(f\"{value:.0f}\", (i, top), xytext=(0, 7), textcoords=\"offset points\",\n                          ha=\"center\", fontsize=12, color=\"0.25\")\n        axis.set_xticks(range(len(sizes)))\n        axis.set_xticklabels([str(int(s)) for s in sizes])\n        axis.set_xlabel(\"threads per block\")\n        axis.set_title(\"1 block\" if cluster_size == 1 else f\"cluster of {cluster_size} blocks\")\n        axis.grid(True, axis=\"y\", alpha=0.3)\n    axes[0].set_ylabel(\"cycles\")\n    axes[0].set_ylim(0, df[\"max_cycles\"].max() * 1.15)   # room for the labels\n    fig.suptitle(TITLE)\n"
+      },
+      "grid": {
+        "rows": 1,
+        "cols": 1,
+        "activePanelIndex": 0,
+        "panels": [
+          {
+            "database": "data",
+            "sql": "SELECT cluster_size, block_size, median_cycles, min_cycles, max_cycles\nFROM fence\nWHERE piece = 'fence.release.sync_restrict::shared::cta.cluster'",
+            "plotType": "line",
+            "x": "block_size",
+            "y": [
+              "median_cycles"
+            ],
+            "transformScript": "# Nothing to do: one row per (cluster size, block size).\n",
+            "layoutScript": "# One fence: cycles against the threads per block, one panel per cluster size.\nimport matplotlib as mpl\nHOUSE = {\n    \"font.size\": 16, \"axes.titlesize\": 17, \"axes.labelsize\": 16,\n    \"xtick.labelsize\": 13, \"ytick.labelsize\": 13, \"figure.titlesize\": 18,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"lines.linewidth\": 2.2, \"lines.markersize\": 7,\n}\nTITLE = \"fence.release.sync_restrict::shared::cta.cluster: mean of 1000 iterations after warmup\"\nCOLOR = \"#1f77b4\"\n\n\ndef customize_matplotlib(fig, ax, config):\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(13, 6)\n    axes = fig.subplots(1, 2, sharey=True)\n    sizes = sorted(df[\"block_size\"].unique())\n    x = {s: i for i, s in enumerate(sizes)}   # equal steps: the sizes double\n    for axis, cluster_size in zip(axes, (1, 12)):\n        d = df[df[\"cluster_size\"] == cluster_size].sort_values(\"block_size\")\n        where = [x[s] for s in d[\"block_size\"]]\n        # The line is the median over the blocks; the bars are their min and max:\n        # in a cluster the blocks sit on different TPCs.\n        axis.errorbar(where, d[\"median_cycles\"],\n                      yerr=[d[\"median_cycles\"] - d[\"min_cycles\"], d[\"max_cycles\"] - d[\"median_cycles\"]],\n                      color=COLOR, marker=\"o\", capsize=4)\n        for i, top, value in zip(where, d[\"max_cycles\"], d[\"median_cycles\"]):\n            axis.annotate(f\"{value:.0f}\", (i, top), xytext=(0, 7), textcoords=\"offset points\",\n                          ha=\"center\", fontsize=12, color=\"0.25\")\n        axis.set_xticks(range(len(sizes)))\n        axis.set_xticklabels([str(int(s)) for s in sizes])\n        axis.set_xlabel(\"threads per block\")\n        axis.set_title(\"1 block\" if cluster_size == 1 else f\"cluster of {cluster_size} blocks\")\n        axis.grid(True, axis=\"y\", alpha=0.3)\n    axes[0].set_ylabel(\"cycles\")\n    axes[0].set_ylim(0, df[\"max_cycles\"].max() * 1.15)   # room for the labels\n    fig.suptitle(TITLE)\n"
+          }
+        ]
+      }
+    },
+    {
+      "version": 3,
+      "label": "fence.acquire.sync_restrict::shared::cluster.cluster: mean of 1000 iterations after warmup",
+      "mode": "grid",
+      "rendererBackend": "matplotlib",
+      "single": {
+        "database": "data",
+        "sql": "SELECT cluster_size, block_size, median_cycles, min_cycles, max_cycles\nFROM fence\nWHERE piece = 'fence.acquire.sync_restrict::shared::cluster.cluster'",
+        "plotType": "line",
+        "x": "block_size",
+        "y": [
+          "median_cycles"
+        ],
+        "transformScript": "# Nothing to do: one row per (cluster size, block size).\n",
+        "layoutScript": "# One fence: cycles against the threads per block, one panel per cluster size.\nimport matplotlib as mpl\nHOUSE = {\n    \"font.size\": 16, \"axes.titlesize\": 17, \"axes.labelsize\": 16,\n    \"xtick.labelsize\": 13, \"ytick.labelsize\": 13, \"figure.titlesize\": 18,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"lines.linewidth\": 2.2, \"lines.markersize\": 7,\n}\nTITLE = \"fence.acquire.sync_restrict::shared::cluster.cluster: mean of 1000 iterations after warmup\"\nCOLOR = \"#1f77b4\"\n\n\ndef customize_matplotlib(fig, ax, config):\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(13, 6)\n    axes = fig.subplots(1, 2, sharey=True)\n    sizes = sorted(df[\"block_size\"].unique())\n    x = {s: i for i, s in enumerate(sizes)}   # equal steps: the sizes double\n    for axis, cluster_size in zip(axes, (1, 12)):\n        d = df[df[\"cluster_size\"] == cluster_size].sort_values(\"block_size\")\n        where = [x[s] for s in d[\"block_size\"]]\n        # The line is the median over the blocks; the bars are their min and max:\n        # in a cluster the blocks sit on different TPCs.\n        axis.errorbar(where, d[\"median_cycles\"],\n                      yerr=[d[\"median_cycles\"] - d[\"min_cycles\"], d[\"max_cycles\"] - d[\"median_cycles\"]],\n                      color=COLOR, marker=\"o\", capsize=4)\n        for i, top, value in zip(where, d[\"max_cycles\"], d[\"median_cycles\"]):\n            axis.annotate(f\"{value:.0f}\", (i, top), xytext=(0, 7), textcoords=\"offset points\",\n                          ha=\"center\", fontsize=12, color=\"0.25\")\n        axis.set_xticks(range(len(sizes)))\n        axis.set_xticklabels([str(int(s)) for s in sizes])\n        axis.set_xlabel(\"threads per block\")\n        axis.set_title(\"1 block\" if cluster_size == 1 else f\"cluster of {cluster_size} blocks\")\n        axis.grid(True, axis=\"y\", alpha=0.3)\n    axes[0].set_ylabel(\"cycles\")\n    axes[0].set_ylim(0, df[\"max_cycles\"].max() * 1.15)   # room for the labels\n    fig.suptitle(TITLE)\n"
+      },
+      "grid": {
+        "rows": 1,
+        "cols": 1,
+        "activePanelIndex": 0,
+        "panels": [
+          {
+            "database": "data",
+            "sql": "SELECT cluster_size, block_size, median_cycles, min_cycles, max_cycles\nFROM fence\nWHERE piece = 'fence.acquire.sync_restrict::shared::cluster.cluster'",
+            "plotType": "line",
+            "x": "block_size",
+            "y": [
+              "median_cycles"
+            ],
+            "transformScript": "# Nothing to do: one row per (cluster size, block size).\n",
+            "layoutScript": "# One fence: cycles against the threads per block, one panel per cluster size.\nimport matplotlib as mpl\nHOUSE = {\n    \"font.size\": 16, \"axes.titlesize\": 17, \"axes.labelsize\": 16,\n    \"xtick.labelsize\": 13, \"ytick.labelsize\": 13, \"figure.titlesize\": 18,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"lines.linewidth\": 2.2, \"lines.markersize\": 7,\n}\nTITLE = \"fence.acquire.sync_restrict::shared::cluster.cluster: mean of 1000 iterations after warmup\"\nCOLOR = \"#1f77b4\"\n\n\ndef customize_matplotlib(fig, ax, config):\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(13, 6)\n    axes = fig.subplots(1, 2, sharey=True)\n    sizes = sorted(df[\"block_size\"].unique())\n    x = {s: i for i, s in enumerate(sizes)}   # equal steps: the sizes double\n    for axis, cluster_size in zip(axes, (1, 12)):\n        d = df[df[\"cluster_size\"] == cluster_size].sort_values(\"block_size\")\n        where = [x[s] for s in d[\"block_size\"]]\n        # The line is the median over the blocks; the bars are their min and max:\n        # in a cluster the blocks sit on different TPCs.\n        axis.errorbar(where, d[\"median_cycles\"],\n                      yerr=[d[\"median_cycles\"] - d[\"min_cycles\"], d[\"max_cycles\"] - d[\"median_cycles\"]],\n                      color=COLOR, marker=\"o\", capsize=4)\n        for i, top, value in zip(where, d[\"max_cycles\"], d[\"median_cycles\"]):\n            axis.annotate(f\"{value:.0f}\", (i, top), xytext=(0, 7), textcoords=\"offset points\",\n                          ha=\"center\", fontsize=12, color=\"0.25\")\n        axis.set_xticks(range(len(sizes)))\n        axis.set_xticklabels([str(int(s)) for s in sizes])\n        axis.set_xlabel(\"threads per block\")\n        axis.set_title(\"1 block\" if cluster_size == 1 else f\"cluster of {cluster_size} blocks\")\n        axis.grid(True, axis=\"y\", alpha=0.3)\n    axes[0].set_ylabel(\"cycles\")\n    axes[0].set_ylim(0, df[\"max_cycles\"].max() * 1.15)   # room for the labels\n    fig.suptitle(TITLE)\n"
+          }
+        ]
+      }
+    },
+    {
+      "version": 3,
+      "label": "fence.proxy.async.shared::cluster: mean of 1000 iterations after warmup",
+      "mode": "grid",
+      "rendererBackend": "matplotlib",
+      "single": {
+        "database": "data",
+        "sql": "SELECT cluster_size, block_size, median_cycles, min_cycles, max_cycles\nFROM fence\nWHERE piece = 'fence.proxy.async.shared::cluster'",
+        "plotType": "line",
+        "x": "block_size",
+        "y": [
+          "median_cycles"
+        ],
+        "transformScript": "# Nothing to do: one row per (cluster size, block size).\n",
+        "layoutScript": "# One fence: cycles against the threads per block, one panel per cluster size.\nimport matplotlib as mpl\nHOUSE = {\n    \"font.size\": 16, \"axes.titlesize\": 17, \"axes.labelsize\": 16,\n    \"xtick.labelsize\": 13, \"ytick.labelsize\": 13, \"figure.titlesize\": 18,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"lines.linewidth\": 2.2, \"lines.markersize\": 7,\n}\nTITLE = \"fence.proxy.async.shared::cluster: mean of 1000 iterations after warmup\"\nCOLOR = \"#1f77b4\"\n\n\ndef customize_matplotlib(fig, ax, config):\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(13, 6)\n    axes = fig.subplots(1, 2, sharey=True)\n    sizes = sorted(df[\"block_size\"].unique())\n    x = {s: i for i, s in enumerate(sizes)}   # equal steps: the sizes double\n    for axis, cluster_size in zip(axes, (1, 12)):\n        d = df[df[\"cluster_size\"] == cluster_size].sort_values(\"block_size\")\n        where = [x[s] for s in d[\"block_size\"]]\n        # The line is the median over the blocks; the bars are their min and max:\n        # in a cluster the blocks sit on different TPCs.\n        axis.errorbar(where, d[\"median_cycles\"],\n                      yerr=[d[\"median_cycles\"] - d[\"min_cycles\"], d[\"max_cycles\"] - d[\"median_cycles\"]],\n                      color=COLOR, marker=\"o\", capsize=4)\n        for i, top, value in zip(where, d[\"max_cycles\"], d[\"median_cycles\"]):\n            axis.annotate(f\"{value:.0f}\", (i, top), xytext=(0, 7), textcoords=\"offset points\",\n                          ha=\"center\", fontsize=12, color=\"0.25\")\n        axis.set_xticks(range(len(sizes)))\n        axis.set_xticklabels([str(int(s)) for s in sizes])\n        axis.set_xlabel(\"threads per block\")\n        axis.set_title(\"1 block\" if cluster_size == 1 else f\"cluster of {cluster_size} blocks\")\n        axis.grid(True, axis=\"y\", alpha=0.3)\n    axes[0].set_ylabel(\"cycles\")\n    axes[0].set_ylim(0, df[\"max_cycles\"].max() * 1.15)   # room for the labels\n    fig.suptitle(TITLE)\n"
+      },
+      "grid": {
+        "rows": 1,
+        "cols": 1,
+        "activePanelIndex": 0,
+        "panels": [
+          {
+            "database": "data",
+            "sql": "SELECT cluster_size, block_size, median_cycles, min_cycles, max_cycles\nFROM fence\nWHERE piece = 'fence.proxy.async.shared::cluster'",
+            "plotType": "line",
+            "x": "block_size",
+            "y": [
+              "median_cycles"
+            ],
+            "transformScript": "# Nothing to do: one row per (cluster size, block size).\n",
+            "layoutScript": "# One fence: cycles against the threads per block, one panel per cluster size.\nimport matplotlib as mpl\nHOUSE = {\n    \"font.size\": 16, \"axes.titlesize\": 17, \"axes.labelsize\": 16,\n    \"xtick.labelsize\": 13, \"ytick.labelsize\": 13, \"figure.titlesize\": 18,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"lines.linewidth\": 2.2, \"lines.markersize\": 7,\n}\nTITLE = \"fence.proxy.async.shared::cluster: mean of 1000 iterations after warmup\"\nCOLOR = \"#1f77b4\"\n\n\ndef customize_matplotlib(fig, ax, config):\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(13, 6)\n    axes = fig.subplots(1, 2, sharey=True)\n    sizes = sorted(df[\"block_size\"].unique())\n    x = {s: i for i, s in enumerate(sizes)}   # equal steps: the sizes double\n    for axis, cluster_size in zip(axes, (1, 12)):\n        d = df[df[\"cluster_size\"] == cluster_size].sort_values(\"block_size\")\n        where = [x[s] for s in d[\"block_size\"]]\n        # The line is the median over the blocks; the bars are their min and max:\n        # in a cluster the blocks sit on different TPCs.\n        axis.errorbar(where, d[\"median_cycles\"],\n                      yerr=[d[\"median_cycles\"] - d[\"min_cycles\"], d[\"max_cycles\"] - d[\"median_cycles\"]],\n                      color=COLOR, marker=\"o\", capsize=4)\n        for i, top, value in zip(where, d[\"max_cycles\"], d[\"median_cycles\"]):\n            axis.annotate(f\"{value:.0f}\", (i, top), xytext=(0, 7), textcoords=\"offset points\",\n                          ha=\"center\", fontsize=12, color=\"0.25\")\n        axis.set_xticks(range(len(sizes)))\n        axis.set_xticklabels([str(int(s)) for s in sizes])\n        axis.set_xlabel(\"threads per block\")\n        axis.set_title(\"1 block\" if cluster_size == 1 else f\"cluster of {cluster_size} blocks\")\n        axis.grid(True, axis=\"y\", alpha=0.3)\n    axes[0].set_ylabel(\"cycles\")\n    axes[0].set_ylim(0, df[\"max_cycles\"].max() * 1.15)   # room for the labels\n    fig.suptitle(TITLE)\n"
+          }
+        ]
+      }
+    }
+  ],
+  "style": {
+    "dpi": 160
+  }
+}

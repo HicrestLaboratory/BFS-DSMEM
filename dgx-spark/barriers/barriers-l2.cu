@@ -1,7 +1,8 @@
-// barriers-naive.cu — how long each thread waits in ONE barrier, timed the
-// naive way. The kernels are those of paper-benchmark/paper-barriers-naive.cu
-// (plus cluster-relaxed); only the host side changes: flags instead of a
-// fixed sweep, and one CSV row per thread per launch.
+// barriers-l2.cu — how long each thread waits in ONE barrier, with a load from
+// L2 after the barrier so that the clock read cannot run early. The same as
+// barriers-shared.cu, but the load goes to one word of global memory, with .cg
+// so that it skips L1 and is served by L2. Each kernel loads the word once before
+// its first clock read, so that the timed load finds it in L2.
 //
 // THE BARRIERS (--barrier)
 //   syncthreads  __syncthreads(): the threads of one block.
@@ -14,43 +15,66 @@
 //
 // THE MEASUREMENT
 //   Every thread of every block, once, at the start of the kernel:
-//       start = clock64();  barrier;  end = clock64();
+//       start = clock64();  barrier;  v = load from L2;  end = clock64();
 //   --warmup untimed launches come first: without them the first launches
 //   are off (cluster.sync(): ~3850, then ~840, then from the 8th launch on
 //   ~470 cycles).
 //
-//   WARNING: this does not always measure the barrier. A barrier compiles to
-//   BAR.SYNC.DEFER_BLOCKING: the warp is not stopped AT the barrier but a
-//   few instructions later, and a clock read is not a memory access, so
-//   nothing makes it wait. The second clock64() can execute before the barrier
-//   is over: e.g. grid.sync() shows ~1250 cycles on warp 0 and ~130 on the
-//   other warps, which in fact wait just as long. barriers-shared.cu adds a
-//   shared-memory load after the barrier to fix this.
+//   Why the load? See barriers-shared.cu: the clock read behind a load cannot
+//   run before the barrier is over. The price is the load itself, here an L2
+//   access, more when many warps load the same word at once.
 //
-// Build: make barriers-naive
-// Run:   build/barriers-naive --barrier grid --blocks 12 --block-size 128 --reps 11
+//   The value must be used BEFORE the second clock read. A load from global
+//   memory (LDG) only issues the request: the warp goes on, and a clock read
+//   right behind it does not wait for the data. Using the value makes it wait.
+//
+// Build: make barriers-l2
+// Run:   build/barriers-l2 --barrier grid --blocks 12 --block-size 128 --reps 11
 
 #include <cooperative_groups.h>
 
 #include "../common.cuh"   // CUDA_CHECK, Args, print_header, print_stats_line, ...
 
+__device__ unsigned l2_word;   // the word every thread loads
 __managed__ long long arrive_time[12][1024];
 
+// Loads the word once, before the first clock read: L2 does not keep it from one
+// launch to the next (without this the timed load takes ~750 cycles, not ~340).
+__device__ __forceinline__ void bring_word_into_l2() {
+  unsigned x;
+  asm volatile("ld.global.cg.u32 %0, [%1];" : "=r"(x) : "l"(&l2_word) : "memory");
+  if (x == 12345) arrive_time[0][0] = 0;   // never true: makes the warp wait for the load
+}
+
 __global__ void barrier_kernel() {
+  unsigned v = 0;
+  bring_word_into_l2();
   long long start = clock64();
   __syncthreads();
+  asm volatile("ld.global.cg.u32 %0, [%1];"            // a load from L2, skipping L1...
+              : "=r"(v)
+              : "l"(&l2_word)
+              : "memory");
+  if (v == 12345) arrive_time[0][0] = 0;   // never true: makes the warp wait for the load
   long long end = clock64();
-  long long duration = end - start;
+  long long duration = end - start + (v == 12345);   // ...whose value is used, so it isn't removed
 
   arrive_time[blockIdx.x][threadIdx.x] = duration;
 }
 
 __global__ void cluster_sync_kernel() {
   cooperative_groups::cluster_group cluster = cooperative_groups::this_cluster();
+  unsigned v = 0;
+  bring_word_into_l2();
   long long start = clock64();
   cluster.sync();
+  asm volatile("ld.global.cg.u32 %0, [%1];"            // a load from L2, skipping L1...
+              : "=r"(v)
+              : "l"(&l2_word)
+              : "memory");
+  if (v == 12345) arrive_time[0][0] = 0;   // never true: makes the warp wait for the load
   long long end = clock64();
-  long long duration = end - start;
+  long long duration = end - start + (v == 12345);   // ...whose value is used, so it isn't removed
 
   arrive_time[blockIdx.x][threadIdx.x] = duration;
 }
@@ -59,21 +83,36 @@ __global__ void cluster_sync_kernel() {
 // write is made visible (no MEMBAR). The difference to cluster_sync_kernel is
 // the price of the release.
 __global__ void cluster_relaxed_kernel() {
+  unsigned v = 0;
+  bring_word_into_l2();
   long long start = clock64();
   asm volatile("barrier.cluster.arrive.relaxed.aligned;\n\t"
                "barrier.cluster.wait.aligned;" ::: "memory");
+  asm volatile("ld.global.cg.u32 %0, [%1];"            // a load from L2, skipping L1...
+              : "=r"(v)
+              : "l"(&l2_word)
+              : "memory");
+  if (v == 12345) arrive_time[0][0] = 0;   // never true: makes the warp wait for the load
   long long end = clock64();
-  long long duration = end - start;
+  long long duration = end - start + (v == 12345);   // ...whose value is used, so it isn't removed
 
   arrive_time[blockIdx.x][threadIdx.x] = duration;
 }
 
 __global__ void grid_sync_kernel() {
   cooperative_groups::grid_group grid = cooperative_groups::this_grid();
+  unsigned v = 0;
+
+  bring_word_into_l2();
   long long start = clock64();
   grid.sync();
+  asm volatile("ld.global.cg.u32 %0, [%1];"            // a load from L2, skipping L1...
+              : "=r"(v)
+              : "l"(&l2_word)
+              : "memory");
+  if (v == 12345) arrive_time[0][0] = 0;   // never true: makes the warp wait for the load
   long long end = clock64();
-  arrive_time[blockIdx.x][threadIdx.x] = end - start;
+  arrive_time[blockIdx.x][threadIdx.x] = end - start + (v == 12345);   // ...whose value is used, so it isn't removed
 }
 
 // One launch: cooperative for grid.sync(), one cluster of --blocks otherwise.
@@ -88,7 +127,7 @@ int main(int argc, char** argv) {
   a.blocks = 1;
   a.reps = 11;
   a.warmup = 10;
-  parse_args(argc, argv, &a, "barriers-naive",
+  parse_args(argc, argv, &a, "barriers-l2",
              "  --barrier B       syncthreads | cluster | cluster-relaxed | grid\n"
              "                                                          (default cluster)\n"
              "  --block-size N    threads per block, 1..1024            (default 128)\n"
@@ -103,11 +142,11 @@ int main(int argc, char** argv) {
   if (strcmp(barrier, "cluster-relaxed") == 0) kernel = cluster_relaxed_kernel;
   if (strcmp(barrier, "grid") == 0)        kernel = grid_sync_kernel;
   if (!kernel) {
-    fprintf(stderr, "barriers-naive: --barrier must be syncthreads, cluster, cluster-relaxed or grid\n");
+    fprintf(stderr, "barriers-l2: --barrier must be syncthreads, cluster, cluster-relaxed or grid\n");
     return 1;
   }
   if (a.block_size < 1 || a.block_size > 1024 || a.blocks < 1 || a.blocks > 12) {
-    fprintf(stderr, "barriers-naive: --block-size must be 1..1024 and --blocks 1..12\n");
+    fprintf(stderr, "barriers-l2: --block-size must be 1..1024 and --blocks 1..12\n");
     return 1;
   }
   const bool grid = (kernel == grid_sync_kernel);
@@ -140,14 +179,14 @@ int main(int argc, char** argv) {
     launch(kernel, grid, a, config);
     for (int i = 0; i < a.blocks; i++) {
       for (int j = 0; j < a.block_size; j++) {
-        printf("barriers-naive,%s,%d,%d,%d,%d,%d,%d,%lld\n", barrier, a.block_size, a.blocks, a.seed,
+        printf("barriers-l2,%s,%d,%d,%d,%d,%d,%d,%lld\n", barrier, a.block_size, a.blocks, a.seed,
                rep, i, j, arrive_time[i][j]);
         all.push_back(arrive_time[i][j]);
       }
     }
   }
 
-  fprintf(stderr, "barriers-naive %s: %d blocks x %d threads\n", barrier, a.blocks, a.block_size);
+  fprintf(stderr, "barriers-l2 %s: %d blocks x %d threads\n", barrier, a.blocks, a.block_size);
   print_stats_line("cycles", all);
   return 0;
 }

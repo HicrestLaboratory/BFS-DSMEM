@@ -5,6 +5,41 @@
 \usepackage{appendixnumberbeamer}
 \usepackage{booktabs}
 \usepackage{minted}
+\usepackage{listings}
+
+% PTX and SASS listings: Pygments has no lexer for either
+\definecolor{asmop}{HTML}{1A5FB4}       % opcode
+\definecolor{asmmod}{HTML}{8E44AD}      % .modifier
+\definecolor{asmreg}{HTML}{C2570C}      % register, predicate, special register
+\definecolor{asmlabel}{HTML}{2E7D32}    % branch label
+\definecolor{asmcomment}{HTML}{808080}
+\lstdefinestyle{asm}{
+  basicstyle=\ttfamily\scriptsize, columns=fullflexible, keepspaces=true, upquote=true,
+  frame=tb, framerule=0.4pt, framextopmargin=1mm, framexbottommargin=1mm,
+  aboveskip=0.3em, belowskip=0.3em, sensitive=true, morecomment=[l]{//},
+  moredelim=[is][\color{black}]{|}{|},   % |...|: no highlighting
+  keywordstyle=\color{asmop}, keywordstyle={[2]\color{asmmod}},
+  keywordstyle={[3]\color{asmreg}}, keywordstyle={[4]\color{asmlabel}},
+  commentstyle=\color{asmcomment}\itshape,
+}
+\lstdefinelanguage{ptx}{
+  style=asm, alsoletter={\%\$},
+  morekeywords={mov,bar,barrier,setp,bra,trap,atom,ld,xor,selp},
+  morekeywords=[2]{sync,cluster,arrive,wait,relaxed,aligned,release,acquire,gpu,add,
+                   u64,u32,s64,s32,b32,ne,gt},
+  morekeywords=[3]{\%rd1,\%rd2,\%rd9,\%r3,\%r4,\%r8,\%r9,\%r10,\%r21,\%r22,\%r23,
+                   \%p1,\%p2,\%p3,\%p4,@\%p1,@\%p2,@\%p4,\%clock64,\%envreg1,\%envreg2},
+  morekeywords=[4]{\$L__BB3_2,\$L__BB3_4,\$L__BB3_5},
+}
+\lstdefinelanguage{sass}{
+  style=asm,
+  morekeywords={LDCU,UISETP,BRA,MEMBAR,ERRBAR,CGAERRBAR,UCGABAR_ARV,UCGABAR_WAIT,CCTL,NOP,
+                BAR,CS2UR,CS2R,ISETP,BPT,LOP3,VOTEU,FLO,POPC,ATOM,SHFL,LD,YIELD,WARPSYNC},
+  morekeywords=[2]{U,EQ,U32,AND,ALL,GPU,SC,CTA,SYS,IVALL,SYNC,DEFER_BLOCKING,NE,S64,TRAP,
+                   LUT,ANY,E,ADD,STRONG,IDX,GT},
+  morekeywords=[3]{R0,R2,R4,R5,R6,R7,R9,UR6,UR8,UR12,UR14,P0,UP0,PT,UPT,RZ,SR_CLOCKLO,@P0},
+  morekeywords=[4]{L_x_0,L_x_1,L_x_2,L_x_3},
+}
 \usepackage{cleveref}
 \usepackage[style=authortitle,backend=bibtex]{biblatex}
 \usepackage[T1]{fontenc}
@@ -18,7 +53,7 @@
 \subcaptionsetup{labelformat=empty}
 
 \usepackage{tikz}
-\usetikzlibrary{shapes.geometric, arrows.meta, positioning, calc, fit, shapes.multipart, shapes.callouts}
+\usetikzlibrary{shapes.geometric, arrows.meta, positioning, calc, fit, shapes.multipart, shapes.callouts, decorations.pathreplacing}
 
 \usepackage{xcolor}
 
@@ -795,6 +830,351 @@ __global__ void barrier() {
   \end{columns}
 \end{frame}
 
+% ============================================================ barriers: PTX and SASS
+\begin{frame}[fragile]{PTX \& SASS of \texttt{\_\_syncthreads()}}
+  \footnotesize
+  \begin{columns}[t,onlytextwidth]
+    \begin{column}{0.46\textwidth}
+      PTX
+\begin{lstlisting}[language=ptx, basicstyle=\ttfamily\scriptsize]
+|mov.u64  %rd1, %clock64;|
+bar.sync 0;
+|mov.u64  %rd2, %clock64;|
+\end{lstlisting}
+    \end{column}
+    \begin{column}{0.46\textwidth}
+      SASS
+\begin{lstlisting}[language=sass, basicstyle=\ttfamily\scriptsize]
+|CS2UR UR6, SR_CLOCKLO|
+BAR.SYNC.DEFER_BLOCKING 0x0
+|CS2R  R2, SR_CLOCKLO|
+\end{lstlisting}
+    \end{column}
+  \end{columns}
+
+  \vspace{1.5em}
+  \begin{itemize}\itemsep3pt
+    \item one PTX instruction $\to$ \textbf{one} SASS instruction: a hardware barrier inside the
+          SM, no memory fence, no traffic outside the SM
+    \item \texttt{DEFER\_BLOCKING}: the warp is not stopped \emph{at} the barrier but at the next
+          instruction that depends on it
+    \item the clock read (\texttt{CS2R}) does not touch memory $\Rightarrow$ it can run
+          \textbf{before} the barrier is over
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{PTX \& SASS of \texttt{cluster.sync()}}
+  \begin{columns}[t,onlytextwidth]
+    \begin{column}{0.40\textwidth}
+      \footnotesize PTX
+\begin{lstlisting}[language=ptx, basicstyle=\ttfamily\scriptsize]
+barrier.cluster.arrive;  // release
+barrier.cluster.wait;    // acquire
+\end{lstlisting}
+      \scriptsize
+      \begin{itemize}\itemsep2pt
+        \item \textbf{two paths}, chosen at run time by \texttt{\%is\_explicit\_cluster}:
+              cluster barrier (\texttt{UCGABAR\_ARV}/\texttt{WAIT}), or
+              \texttt{\_\_syncthreads()} when not launched with clusters
+        \item the release is a \textbf{GPU-scope} fence (\texttt{MEMBAR.ALL.GPU}),
+              although only the cluster has to see the writes
+        \item the acquire invalidates the whole L1 (\texttt{CCTL.IVALL})
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.56\textwidth}
+      \footnotesize SASS
+\begin{lstlisting}[language=sass, basicstyle=\ttfamily\scriptsize\linespread{0.88}\selectfont]
+  LDCU UR8, c[0x0][0x36c]   // %is_explicit_cluster
+  UISETP.EQ.U32.AND UP0, UPT, UR8, 0x1, UPT
+  BRA.U !UP0, .L_x_0
+  MEMBAR.ALL.GPU            // release
+  ERRBAR
+  CGAERRBAR
+  UCGABAR_ARV               // arrive
+  BRA .L_x_1
+.L_x_0:
+  NOP
+.L_x_1:
+  BRA.U !UP0, .L_x_2
+  UCGABAR_WAIT              // wait
+  CCTL.IVALL                // acquire
+  BRA .L_x_3
+.L_x_2:
+  BAR.SYNC.DEFER_BLOCKING 0x0  // no cluster
+.L_x_3:
+\end{lstlisting}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{What is a fence?}
+  \footnotesize
+  A \textbf{fence} keeps a thread's memory accesses in order: no thread in the fence's
+  \textbf{scope} (block, cluster, GPU) can see what the thread did after the fence without also
+  seeing what it did before. A barrier that publishes data needs two halves:
+  \begin{itemize}\itemsep1pt
+    \item \textbf{release} (on arrive): my earlier writes are visible to whoever passes the barrier
+    \item \textbf{acquire} (on wait): my later reads see the others' writes, not stale copies
+  \end{itemize}
+
+  \vspace{0.2em}
+  PTX fences compiled for \texttt{sm\_121}:
+
+  \scriptsize
+  \renewcommand{\arraystretch}{0.95}
+  \begin{tabular}{@{}lllll@{}}
+    \toprule
+    PTX & \multicolumn{3}{l}{SASS: release half} & acquire half \\
+    \midrule
+    \texttt{fence.acq\_rel.cta}     & \texttt{MEMBAR.ALL.CTA} &        &           & \\
+    \color{asmop}\texttt{fence.acq\_rel.cluster} & \color{asmop}\texttt{MEMBAR.ALL.GPU} & \color{asmop}\texttt{ERRBAR} & \color{asmop}\texttt{CGAERRBAR}
+      & \color{asmop}\texttt{CCTL.IVALL}\tikz[remember picture,overlay]\coordinate (nocl-top) at (0.12,0.75em); \\
+    \color{asmop}\texttt{fence.acq\_rel.gpu}     & \color{asmop}\texttt{MEMBAR.ALL.GPU} & \color{asmop}\texttt{ERRBAR} & \color{asmop}\texttt{CGAERRBAR}
+      & \color{asmop}\texttt{CCTL.IVALL}\tikz[remember picture,overlay]\coordinate (nocl-bot) at (0.12,-0.25em); \\
+    \texttt{fence.sc.gpu}          & \texttt{MEMBAR.\textbf{SC}.GPU}  & \texttt{ERRBAR} & \texttt{CGAERRBAR} & \texttt{CCTL.IVALL} \\
+    \texttt{fence.acq\_rel.sys}     & \texttt{MEMBAR.ALL.\textbf{SYS}} & \texttt{ERRBAR} & \texttt{CGAERRBAR} & \texttt{CCTL.IVALL} \\
+    \midrule
+    \texttt{barrier.cluster.arrive} & \texttt{MEMBAR.ALL.GPU} & \texttt{ERRBAR} & \texttt{CGAERRBAR} & \\
+    \texttt{barrier.cluster.wait}   & & & & \texttt{CCTL.IVALL} \\
+    \bottomrule
+  \end{tabular}
+  \begin{tikzpicture}[remember picture, overlay]
+    \draw[asmop, thick, decorate, decoration={brace, amplitude=4pt}] (nocl-top) -- (nocl-bot)
+      node[midway, right=6pt, align=left, font=\scriptsize\bfseries] {No cluster scope\\in hardware!};
+  \end{tikzpicture}
+\end{frame}
+
+\begin{frame}[fragile]{Reading the \texttt{cluster.sync()} SASS}
+  \begin{columns}[c,onlytextwidth]
+    \begin{column}{0.34\textwidth}
+\begin{lstlisting}[language=sass]
+MEMBAR.ALL.GPU
+ERRBAR
+CGAERRBAR
+UCGABAR_ARV
+...
+UCGABAR_WAIT
+CCTL.IVALL
+\end{lstlisting}
+    \end{column}
+    \begin{column}{0.62\textwidth}
+      \scriptsize
+      \begin{itemize}\itemsep3pt
+        \item \texttt{\textcolor{asmop}{MEMBAR}.\textcolor{asmmod}{ALL}.\textcolor{asmmod}{GPU}}:
+              memory barrier; waits until the warp's earlier loads and stores are performed at
+              the scope (\texttt{CTA}, \texttt{GPU}, \texttt{SYS}). \texttt{ALL} = acq\_rel,
+              \texttt{SC} = sequentially consistent
+        \item \texttt{\textcolor{asmop}{ERRBAR}}: error barrier; waits until earlier memory
+              operations can no longer report a fault
+        \item \texttt{\textcolor{asmop}{CGAERRBAR}}: the same for cluster (DSMEM) traffic.
+              CGA, \emph{Cooperative Grid Array}, is NVIDIA's hardware name for a cluster
+        \item \texttt{\textcolor{asmop}{UCGABAR\_ARV}}, \texttt{\textcolor{asmop}{UCGABAR\_WAIT}}:
+              the hardware cluster barrier, arrive and wait. \texttt{U} = uniform datapath:
+              executed once per warp
+        \item \texttt{\textcolor{asmop}{CCTL}.\textcolor{asmmod}{IVALL}}: cache control,
+              invalidate all of L1, so later loads go to L2 and see the other SMs' writes
+      \end{itemize}
+    \end{column}
+  \end{columns}
+
+  \vspace{0.6em}
+  \tiny
+  Only the names are documented (CUDA Binary Utilities, instruction set reference); the
+  semantics are our reading of them and of the PTX they come from.
+\end{frame}
+
+\begin{frame}[fragile]{PTX \& SASS of the cluster barrier, relaxed arrive}
+  \begin{columns}[t,onlytextwidth]
+    \begin{column}{0.40\textwidth}
+      \footnotesize PTX
+\begin{lstlisting}[language=ptx, basicstyle=\ttfamily\scriptsize]
+barrier.cluster.arrive.relaxed.aligned;
+barrier.cluster.wait.aligned;
+\end{lstlisting}
+      \scriptsize
+      \begin{itemize}\itemsep2pt
+        \item \texttt{.relaxed}: the arrive makes \textbf{no} write visible
+        \item same SASS as \texttt{cluster.sync()} \textbf{minus the release}: the three
+              fences before \texttt{UCGABAR\_ARV} are gone
+        \item the wait keeps its acquire (\texttt{CCTL.IVALL})
+        \item relaxed vs.\ default $=$ the cost of the release fences
+      \end{itemize}
+    \end{column}
+    \begin{column}{0.56\textwidth}
+      \footnotesize SASS
+\begin{lstlisting}[language=sass, basicstyle=\ttfamily\scriptsize\linespread{0.88}\selectfont]
+  LDCU UR8, c[0x0][0x36c]   // %is_explicit_cluster
+  UISETP.EQ.U32.AND UP0, UPT, UR8, 0x1, UPT
+  BRA.U !UP0, .L_x_0
+                            // (no release fences)
+  UCGABAR_ARV               // arrive
+  BRA .L_x_1
+.L_x_0:
+  NOP
+.L_x_1:
+  BRA.U !UP0, .L_x_2
+  UCGABAR_WAIT              // wait
+  CCTL.IVALL                // acquire
+  BRA .L_x_3
+.L_x_2:
+  BAR.SYNC.DEFER_BLOCKING 0x0  // no cluster
+.L_x_3:
+\end{lstlisting}
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Taking \texttt{cluster.sync()} apart: what each piece costs}
+  \scriptsize
+  Loop of 1000 barriers (after 100 untimed), same results for cluster sizes 1, ..., 12.
+  
+  \vspace{1em}
+  \setlength{\tabcolsep}{3pt}
+  \begin{columns}[t,onlytextwidth]
+    \begin{column}{0.42\textwidth}
+      \begin{tabular}{@{}lrr@{}}
+        \toprule
+        piece & 32 thr & 1024 thr \\
+        \midrule
+        full \texttt{cluster.sync()}              & 377\,cy & 617\,cy \\
+        relaxed arrive (no fence)                 & 96\,cy  & 145\,cy \\
+        \quad $\hookrightarrow$ arrive alone      & 44\,cy  & 62\,cy \\
+        \quad $\hookrightarrow$ wait, all arrived & 24\,cy  & 28\,cy \\
+        \bottomrule
+      \end{tabular}
+    \end{column}
+    \begin{column}{0.56\textwidth}
+      \begin{tabular}{@{}llrr@{}}
+        \toprule
+        PTX & SASS & 32 thr & 1024 thr \\
+        \midrule
+        \texttt{fence.acquire.cluster}  & \texttt{CCTL.IVALL}     & 4\,cy   & 98\,cy \\
+        \texttt{fence.release.cluster}  & \texttt{MEMBAR.ALL.GPU} & 281\,cy & 312\,cy \\
+        \texttt{fence.acq\_rel.cluster} & both halves             & 282\,cy & 326\,cy \\
+        \texttt{fence.acq\_rel.cta}     & \texttt{MEMBAR.ALL.CTA} & 7\,cy   & 59\,cy \\
+        \bottomrule
+      \end{tabular}
+    \end{column}
+  \end{columns}
+
+  \centering
+  \begin{tikzpicture}[x=0.03cm, y=1cm, font=\scriptsize]
+    \fill[asmreg!70] (0,0) rectangle (282,0.45);
+    \fill[asmop!70]  (282,0) rectangle (379,0.45);
+    \node[white, font=\scriptsize\bfseries] at (141,0.225) {release fence $\approx$ 282};
+    \node[white, font=\scriptsize\bfseries] at (282+48,0.225) {signal 96};
+    \draw[decorate, decoration={brace, amplitude=3pt}] (0,0.5) -- (379,0.5)
+      node[midway, above=3pt] {\texttt{cluster.sync()} with 1 block of 32 threads $\approx$ 380 cycles};
+  \end{tikzpicture}
+  \vspace{0.5em}
+  \raggedright
+  \begin{itemize}\itemsep0pt
+    \item \textbf{the release fence is $\sim$75\% at every block size}: 281 of 377 cycles at 32 threads, 472 of 617 at 1024
+    \item \textbf{above 8 warps the fences queue}: released together, the slowest waits +75 (512 thr), +132 (1024 thr)
+    \item \textbf{cheap fences grow with the warps}: the acquire is free only for small blocks (4 $\to$ 98 cycles)
+    \item \textbf{same cost for 1 block and for 12}: a fixed round trip to a unit, not messages between blocks
+    \item \textbf{the 1st barrier of cluster.sync() costs $\sim$90 more}
+    \item a wait on a completed barrier costs 24 $\Rightarrow$ \textbf{split barrier}: arrive early, wait late
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Cost by TPC position, for each GPC}
+  \footnotesize
+  48 clusters of one block, one per SM, all at once; 32 threads, loop of 1000. Values in cycles.
+
+  \vspace{0.4em}
+  \centering
+  \small
+  \setlength{\tabcolsep}{6pt}
+  \begin{tabular}{@{}rr@{\hspace{1.8em}}rrr@{\hspace{1.8em}}rrrr@{}}
+    \toprule
+    & & \multicolumn{3}{c}{\textbf{same in all 4 GPCs}} & \multicolumn{4}{c}{\textbf{L2 load, depends on the GPC}} \\
+    \cmidrule(r{1.2em}){3-5}\cmidrule{6-9}
+    TPC pos. & $w$ & \texttt{cluster.sync()} & relaxed & fence & GPC 0 & GPC 1 & GPC 2 & GPC 3 \\
+    \midrule
+      0 & 31 & 377 & 96 & 282 & \textcolor{myred}{343} & 318 & 318 & \textcolor{myred}{341} \\
+      3 & 24 & 364 & 89 & 276 & \textcolor{myred}{336} & 311 & 311 & \textcolor{myred}{334} \\
+      1 & 19 & 353 & 84 & 270 & \textcolor{myred}{331} & 306 & 306 & \textcolor{myred}{329} \\
+      4 & 12 & 340 & 77 & 264 & \textcolor{myred}{324} & 299 & 299 & \textcolor{myred}{322} \\
+      2 & 8 & 333 & 77 & 262 & \textcolor{myred}{320} & 295 & 295 & \textcolor{myred}{318} \\
+      5 & 0 & 326 & 77 & 262 & \textcolor{myred}{312} & 287 & 287 & \textcolor{myred}{310} \\
+    \bottomrule
+  \end{tabular}
+
+  \vspace{0.4em}
+  \raggedright
+  \footnotesize
+  \begin{itemize}\itemsep2pt
+    \item rows go from the farthest TPC ($w = 31$) to the closest ($w = 0$)
+    \item \textbf{barrier and fence do not depend on the GPC}; L2 does: \textcolor{myred}{GPCs 0 and 3} cost $\sim$25 more
+  \end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]{PTX \& SASS of \texttt{grid.sync()}}
+  \vspace{-0.3em}
+  \begin{columns}[t,onlytextwidth]
+    \begin{column}{0.47\textwidth}
+      \scriptsize PTX (abridged)
+\begin{lstlisting}[language=ptx, basicstyle=\ttfamily\tiny\linespread{0.88}\selectfont]
+  mov.u32 %r3, %envreg2;      // grid workspace
+  mov.u32 %r4, %envreg1;      // (set by the driver)
+  setp.ne.s64 %p1, %rd1, 0;
+  @%p1 bra $L__BB3_2;
+  trap;                       // not cooperative
+$L__BB3_2:
+  barrier.sync 0;             // (1) block barrier
+  setp.ne.s32 %p2, %r8, 0;
+  @%p2 bra $L__BB3_5;         // thread 0 only
+  ...
+  selp.b32 %r10, %r21, 1, %p3;
+  atom.add.release.gpu.u32 %r9, [%rd9], %r10;
+$L__BB3_4:                    // (2) spin
+  ld.acquire.gpu.u32 %r22, [%rd9];
+  xor.b32 %r23, %r22, %r9;
+  setp.gt.s32 %p4, %r23, -1;  // top bit flipped?
+  @%p4 bra $L__BB3_4;
+$L__BB3_5:
+  barrier.sync 0;             // (3) block barrier
+\end{lstlisting}
+      \scriptsize
+      \textbf{No hardware grid barrier}: a counter in global memory (L2).
+      Block 0 adds \texttt{0x80000001}$-n$, the others add 1: the $n$ adds sum to
+      \texttt{0x80000000}, so the top bit flips when the last block arrives.
+    \end{column}
+    \begin{column}{0.51\textwidth}
+      \scriptsize SASS (abridged)
+\begin{lstlisting}[language=sass, basicstyle=\ttfamily\tiny\linespread{0.88}\selectfont]
+  ISETP.NE.S64.AND P0, PT, R2, RZ, PT
+  @P0 BRA .L_x_0
+  BPT.TRAP 0x1                // not cooperative
+.L_x_0:
+  BAR.SYNC.DEFER_BLOCKING 0x0 // (1)
+  LOP3.LUT P0, RZ, R0, R5, RZ, 0xfc, !PT
+  @P0 BRA .L_x_1              // thread 0 only
+  VOTEU.ANY UR14, UPT, PT     // warp-aggregated
+  FLO.U32 R4, UR14            // atomic: a leader
+  POPC R0, UR14               // lane adds for all
+  ...
+  @P0 MEMBAR.ALL.GPU          // release
+  @P0 ERRBAR
+  @P0 CGAERRBAR
+  @P0 ATOM.E.ADD.STRONG.GPU PT, R5, [R2.64+0x4], R5
+  SHFL.IDX PT, R0, R5, R4, 0x1f
+.L_x_2:                       // (2) spin
+  LD.E.STRONG.GPU R5, [R2.64+0x4]
+  CCTL.IVALL                  // acquire
+  YIELD
+  LOP3.LUT R5, R5, R0, RZ, 0x3c, !PT
+  ISETP.GT.AND P0, PT, R5, -0x1, PT
+  @P0 BRA .L_x_2
+.L_x_1:
+  WARPSYNC.ALL
+  BAR.SYNC.DEFER_BLOCKING 0x0 // (3)
+\end{lstlisting}
+    \end{column}
+  \end{columns}
+\end{frame}
+
 % ============================================================ barriers: naive results
 \begin{frame}{Naive: \texttt{\_\_syncthreads()}}
   \centering
@@ -896,13 +1276,13 @@ __global__ void barrier() {
   {\footnotesize $\sim$1300 cycles for \emph{every} thread, not 133: the naive \texttt{grid.sync()} was wrong.}
 \end{frame}
 
-% ============================================================ barriers: thread 0
+% ============================================================ barriers: warp 0
 \begin{frame}{A closer look: only warp 0 is right}
   \vspace{0.4em}
   \footnotesize
   Looking at the naive \texttt{grid.sync()} warp by warp:
   \begin{itemize}\itemsep4pt
-    \item \textbf{warp 0} always measures $\sim$1250--1300 cycles;
+    \item \textbf{warp 0} always measures $\sim$1270--1350 cycles;
     \item \textbf{all the other warps} measure $\sim$133 cycles, although they wait just as long.
   \end{itemize}
 
@@ -916,40 +1296,40 @@ __global__ void barrier() {
   so its clock read comes after the barrier is really over.
 
   \vspace{0.5em}
-  $\Rightarrow$ measure the naive way, but keep \textbf{only thread 0 of each block}:
+  $\Rightarrow$ measure the naive way, but keep \textbf{only warp 0 of each block}:
   no shared load, so no extra $\sim$50 cycles.
 \end{frame}
 
-\begin{frame}{Thread 0 only: \texttt{\_\_syncthreads()}}
+\begin{frame}{Warp 0 only: \texttt{\_\_syncthreads()}}
   \centering
-  \includegraphics[width=0.94\linewidth,height=0.72\textheight,keepaspectratio]{images/barriers/plots_syncthreads-one-block.png}
+  \includegraphics[width=0.94\linewidth,height=0.72\textheight,keepaspectratio]{images/barriers/plots-warp0_syncthreads-one-block.png}
 
   \vspace{0.2em}
   {\footnotesize 6 cycles up to 256 threads, 18 (512), 59 (1024): same picture as the naive one.}
 \end{frame}
 
-\begin{frame}{Thread 0 only: \texttt{cluster.sync()}}
+\begin{frame}{Warp 0 only: \texttt{cluster.sync()}}
   \centering
-  \includegraphics[width=0.94\linewidth,height=0.72\textheight,keepaspectratio]{images/barriers/plots_cluster-sync-one-cluster.png}
+  \includegraphics[width=0.94\linewidth,height=0.72\textheight,keepaspectratio]{images/barriers/plots-warp0_cluster-sync-one-cluster.png}
 
   \vspace{0.2em}
   {\footnotesize $\sim$471 cycles: identical to the naive median.}
 \end{frame}
 
-\begin{frame}{Thread 0 only: cluster barrier, relaxed arrive}
+\begin{frame}{Warp 0 only: cluster barrier, relaxed arrive}
   \centering
-  \includegraphics[width=0.94\linewidth,height=0.72\textheight,keepaspectratio]{images/barriers/plots_cluster-barrier-with-a-relaxed-arrive-one-cluster.png}
+  \includegraphics[width=0.94\linewidth,height=0.72\textheight,keepaspectratio]{images/barriers/plots-warp0_cluster-barrier-with-a-relaxed-arrive-one-cluster.png}
 
-  \vspace{0.2em}
+wwwwwccaaaaaa  \vspace{0.2em}
   {\footnotesize $\sim$190 cycles: identical to the naive median.}
 \end{frame}
-
-\begin{frame}{Thread 0 only: \texttt{grid.sync()}}
+adwwd
+\begin{frame}{Warp 0 only: \texttt{grid.sync()}}
   \centering
-  \includegraphics[width=0.94\linewidth,height=0.72\textheight,keepaspectratio]{images/barriers/plots_grid-sync.png}
+  \includegraphics[width=0.94\linewidth,height=0.72\textheight,keepaspectratio]{images/barriers/plots-warp0_grid-sync.png}
 
   \vspace{0.2em}
-  {\footnotesize $\sim$1250--1320 cycles: the real cost, without the $\sim$50 cycles of the shared load.}
+  {\footnotesize $\sim$1270--1350 cycles up to 256 threads: the real cost, without the $\sim$50 cycles of the shared load.}
 \end{frame}
 
 % ============================================================ barriers: paper

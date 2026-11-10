@@ -1,5 +1,5 @@
-# SbatchMan batch definition: how long one barrier takes (barriers-naive.cu,
-# barriers-shared.cu and barriers.cu).
+# SbatchMan batch definition: how long one barrier takes (barriers.cu,
+# barriers-shared.cu, barriers-l2.cu and barriers-gmem.cu).
 #
 # Run from THIS directory (the job's working directory is where you launch):
 #     sbatchman launch -f experiments.yaml
@@ -9,19 +9,19 @@
 # SbatchMan/experiments/<cluster>/<config>/<tag>/<timestamp>/, so each tag
 # carries the parameters that identify the job.
 #
-# The three programs run the same sweep and time the same thing, end - start
-# around ONE barrier:
-#   barriers-naive   the paper's method, one CSV row per thread per launch;
+# The programs run the same sweep and time the same thing, end - start
+# around ONE barrier, with one CSV row per thread per launch:
+#   barriers         the paper's method. plots-naive.json shows every thread,
+#                    plots-warp0.json only warp 0 (thread < 32): warp 0 does the work
+#                    of the barrier, so its clock read is not early;
 #   barriers-shared  + a shared-memory load after the barrier so the clock
-#                    read cannot run early, one row per thread per launch;
-#   barriers         the kernels of barriers-naive, but only thread 0 of each
-#                    block is printed: the real cost (warp 0 does the work of
-#                    the barrier, so its clock read is not early).
-# 5 launches: a naive or shared job with 12 blocks x 1024 threads is already
-# 61440 rows.
+#                    read cannot run early;
+#   barriers-l2      the same with a load from L2;
+#   barriers-gmem    the same with a load that misses L2 and goes to DRAM.
+# 5 launches: a job with 12 blocks x 1024 threads is already 61440 rows.
 
 variables:
-  program: [barriers-naive, barriers-shared, barriers]
+  program: [barriers, barriers-shared, barriers-l2, barriers-gmem]
   reps: [5]
   block_size: [32, 64, 128, 256, 512, 1024]
 
@@ -41,3 +41,15 @@ jobs:
       barrier: [cluster, cluster-relaxed, grid]
       blocks: [2, 12]
     command: "../../build/{program} --barrier {barrier} --blocks {blocks} --block-size {block_size} --reps {reps}"
+
+  # Every piece of cluster.sync() and every fence (plots-fence.json).
+  - config: local
+    tag: "fence_parts_cluster_size_{cluster_size}_block_size_{block_size}"
+    variables:
+      cluster_size: [1, 12]
+    command: "../../build/fence parts --cluster-size {cluster_size} --block-size {block_size}"
+
+  # 48 clusters of one block, one per SM, all at once: the cost of each SM's path.
+  - config: local
+    tag: "fence_placement_cluster_size_1"
+    command: "../../build/fence placement --cluster-size 1"
