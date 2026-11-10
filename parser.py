@@ -14,6 +14,11 @@ they are visible and easy to change.
 Every value is copied from the program's CSV output. A column a program does
 not write (e.g. buffer_kib for dsmem) is left empty.
 
+One machine per database: only the jobs of SbatchMan cluster $MACHINE are
+parsed (default dgx-spark), so GB10 and H100 rows are never mixed. On the H100:
+
+    MACHINE=h100-pcie sbatchman visualize
+
 Table `latency` (dgx-spark/latency/: smem, l1, l2, dram, dsmem)
   tag            SbatchMan tag of the job, e.g. l1_buffer_kib_32.
   component      what was measured: smem, l1, l2, dram or dsmem (the
@@ -76,6 +81,21 @@ of cluster.sync() costs, the mean of 1000 back-to-back executions)
 Table `fence_placement` (dgx-spark/barriers/fence.cu placement: one row per block)
   tag, piece, cluster_size, block_size, block, cluster, sm, cycles
 
+Table `l2_topology` (dgx-spark/extra/l2_topology.cu: L2 latency from every SM)
+  tag, smid, gpc, tpc, tpc_pos (the measured GPC and the TPC's position in it),
+  buffer_kib, steps, seed, p25, median, p75   cycles per L2 load
+
+Table `histogram_dsmem` (dgx-spark/extra/histogram-dsmem.cu: the same histogram
+built with global atomics, a private copy per block, or split over a cluster)
+  tag, method (global | private | dsmem), cluster_size (1 without clusters),
+  bins, hist_kib, elements, grid, block_size, rep, ms (one timed run)
+
+Table `cluster_residency` (dgx-spark/extra/cluster_residency.cu: how many blocks
+run at the same time, with and without clusters)
+  tag, block_size, smem_bytes, cluster_size (1 = no clusters), grid (blocks
+  launched), api_blocks (occupancy API), measured_blocks (most blocks alive at
+  once on the GPU), max_blocks_per_sm (most alive at once on one SM)
+
 Table `p2p` (dgx-spark/throughput/p2p.cu: the paper's copy.cu, --bytes from
 rank src to rank dst through DSMEM or global memory)
   tag, method (dsmem-push | dsmem-pull | gmem-ldst), src, dst (1 -> 0 in a
@@ -95,6 +115,7 @@ Table `atomic` (dgx-spark/atomics/atomic.cu: atomicOr / atomicAdd / atomicCAS)
 """
 
 import io
+import os
 
 import pandas as pd
 
@@ -139,6 +160,16 @@ TABLES = {
   "fence": ("fence", [
     "piece", "cluster_size", "block_size", "median_cycles", "min_cycles", "max_cycles", "median_wait",
   ]),
+  "l2_topology": ("l2_topology", [
+    "smid", "gpc", "tpc", "tpc_pos", "buffer_kib", "steps", "seed", "p25", "median", "p75",
+  ]),
+  "histogram-dsmem": ("histogram_dsmem", [
+    "method", "cluster_size", "bins", "hist_kib", "elements", "grid", "block_size", "rep", "ms",
+  ]),
+  "cluster_residency": ("cluster_residency", [
+    "block_size", "smem_bytes", "cluster_size", "grid", "api_blocks", "measured_blocks",
+    "max_blocks_per_sm",
+  ]),
   "p2p": ("p2p", [
     "method", "src", "dst", "bytes", "block_size", "seed", "rep",
     "cycles_receiver", "cycles_sender", "cycles",
@@ -172,6 +203,8 @@ def parse(job: sbm.Job):
   # it is retired (e.g. measured by an older version of a program), so skip them.
   if job.archive_name:
     return None
+  if job.cluster_name != os.environ.get("MACHINE", "dgx-spark"):
+    return None   # another machine's job: it goes in that machine's database
   if _status(job) != "COMPLETED":
     return None
   text = job.get_stdout()

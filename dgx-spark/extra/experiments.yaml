@@ -1,0 +1,28 @@
+# SbatchMan batch definition: the histogram and the residency experiments of
+# this folder (histogram-dsmem.cu, cluster_residency.cu). Each program sweeps its
+# cases itself, so each is one job.
+#
+# Run from THIS directory (the job's working directory is where you launch):
+#     sbatchman launch -f experiments.yaml
+# and look at the results with
+#     sbatchman visualize --presets plots.json
+
+jobs:
+  # global atomics vs a private copy per block vs a histogram split over a
+  # cluster of 2, 4, 8, 12 blocks, for 1536 to 393216 bins; 11 timed runs each.
+  - config: local
+    tag: "histogram-dsmem"
+    command: "../../build/histogram-dsmem"
+
+  # Blocks alive at the same time, with and without clusters: block sizes 64,
+  # 256, 1024 and 32 KiB, 50 KiB and the maximum of shared memory per block.
+  - config: local
+    tag: "cluster_residency"
+    command: "../../build/cluster_residency"
+
+  # L2 latency from every SM, with its measured GPC and TPC position (heatmap
+  # in plots.json; with ../barriers' fence_placement it also gives the table
+  # "cost by TPC position, for each GPC", tools/gpc_table.py).
+  - config: local
+    tag: "l2_topology"
+    command: "../../build/l2_topology"

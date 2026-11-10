@@ -8,12 +8,12 @@
 // It also records %smid for every rank on every launch. Ranks are an
 // abstraction; SMs are the hardware. Converting the matrix from rank
 // coordinates to SM coordinates is what turns "rank 1 is slow" into a
-// statement about the physical layout (TPC = smid/2, GPC = (smid/2) % 4,
-// established in gpc.cu).
+// statement about the physical layout (TPC = smid/2, and the GPC measured by
+// discover_topology() in ../topology.cuh).
 //
-// WHICH GPC. One cluster per GPC is launched, and cluster k lands on GPC k;
-// the cluster selected by --gpc is the one measured, the others only fill
-// their shared memory and wait.
+// WHICH GPC. As many clusters as GPCs are launched. A first launch, in which
+// nobody chases, finds the cluster that landed on GPC --gpc; that cluster is
+// the one measured, the others only fill their shared memory and wait.
 //
 // Build: make dsmem
 // Run:   build/dsmem [--cluster-size 12] [--gpc 0] [--reps 21] [--steps 16384]
@@ -21,6 +21,7 @@
 #include <cooperative_groups.h>
 
 #include "../common.cuh"
+#include "../topology.cuh"   // discover_topology(): the measured SM -> GPC mapping
 
 namespace cg = cooperative_groups;
 
@@ -52,9 +53,10 @@ int main(int argc, char** argv) {
     Args a;
     parse_args(argc, argv, &a, "dsmem",
                "  --cluster-size N  blocks per cluster, 2..12              (default 12)\n"
-               "  --gpc N           which GPC is measured, 0..3            (default 0)\n");
-    if (a.gpc < 0 || a.gpc >= NUM_GPCs) {
-        fprintf(stderr, "dsmem: --gpc must be 0..%d\n", NUM_GPCs - 1);
+               "  --gpc N           which GPC is measured (see build/gpc)   (default 0)\n");
+    const Topology topo = discover_topology();
+    if (a.gpc < 0 || a.gpc >= topo.num_gpcs) {
+        fprintf(stderr, "dsmem: --gpc must be 0..%d\n", topo.num_gpcs - 1);
         return 1;
     }
     int cs = a.cluster_size;
@@ -77,8 +79,7 @@ int main(int argc, char** argv) {
     CUDA_CHECK(cudaMemcpy(dperm, hperm.data(), SBUF * sizeof(unsigned),
                           cudaMemcpyHostToDevice));
 
-    const int clusters = NUM_GPCs;     // one per GPC: cluster k runs on GPC k
-    const int measured = a.gpc;
+    const int clusters = topo.num_gpcs;   // one per GPC, as long as the scheduler spreads them
 
     Result* out;   unsigned* smids;
     CUDA_CHECK(cudaMallocManaged(&out, sizeof(Result)));
@@ -96,6 +97,18 @@ int main(int argc, char** argv) {
     attr[0].val.clusterDim.z = 1;
     cfg.attrs = attr;
     cfg.numAttrs = 1;
+
+    // Which cluster is on GPC --gpc? A launch in which nobody chases (measured = -1).
+    CUDA_CHECK(cudaLaunchKernelEx(&cfg, matrix_chase, (const unsigned*)dperm, 0, 0, a.warmup,
+                                  a.steps, out, smids, -1));
+    CUDA_CHECK(cudaDeviceSynchronize());
+    int measured = -1;
+    for (int c = 0; c < clusters && measured < 0; c++)
+        if (topo.gpc_of_sm[smids[(size_t)c * cs]] == a.gpc) measured = c;
+    if (measured < 0) {
+        fprintf(stderr, "dsmem: no cluster of %d landed on GPC %d\n", cs, a.gpc);
+        return 1;
+    }
 
     std::vector<double> med(cs * cs, 0.0);
     std::vector<int> smid_of(cs, -1);
@@ -131,14 +144,14 @@ int main(int argc, char** argv) {
     }
 
     // ---- human-readable summary on stderr ----
-    fprintf(stderr, "measured GPC %d of %d (cluster %d of %d)\n", a.gpc, NUM_GPCs,
+    fprintf(stderr, "measured GPC %d of %d (cluster %d of %d)\n", a.gpc, topo.num_gpcs,
             measured, clusters);
     fprintf(stderr, "rank -> SM map (stable across launches: %s)\n",
             smid_changes ? "NO" : "yes");
     fprintf(stderr, "  rank:"); for (int k = 0; k < cs; k++) fprintf(stderr, "%5d", k);
     fprintf(stderr, "\n  smid:"); for (int k = 0; k < cs; k++) fprintf(stderr, "%5d", smid_of[k]);
     fprintf(stderr, "\n  TPC :"); for (int k = 0; k < cs; k++) fprintf(stderr, "%5d", smid_of[k] / 2);
-    fprintf(stderr, "\n  GPC :"); for (int k = 0; k < cs; k++) fprintf(stderr, "%5d", (smid_of[k] / 2) % NUM_GPCs);
+    fprintf(stderr, "\n  GPC :"); for (int k = 0; k < cs; k++) fprintf(stderr, "%5d", topo.gpc_of_sm[smid_of[k]]);
 
     fprintf(stderr, "\n\nmedian cycles/load, rows = reader rank, cols = target rank\n     ");
     for (int t = 0; t < cs; t++) fprintf(stderr, "%7d", t);

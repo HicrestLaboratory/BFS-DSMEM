@@ -1,0 +1,114 @@
+{
+  "version": 3,
+  "activeTabIndex": 0,
+  "tabs": [
+    {
+      "version": 3,
+      "label": "histogram: global vs private vs DSMEM",
+      "mode": "grid",
+      "rendererBackend": "matplotlib",
+      "single": {
+        "database": "data",
+        "sql": "SELECT method, cluster_size, hist_kib, ms\nFROM histogram_dsmem",
+        "plotType": "line",
+        "x": "hist_kib",
+        "y": [
+          "ms"
+        ],
+        "transformScript": "# One point per (method, cluster size, histogram size): the median of the runs.\ndf = df.groupby(['method', 'cluster_size', 'hist_kib'], as_index=False)['ms'].median()",
+        "layoutScript": "import matplotlib as mpl\nfrom matplotlib.ticker import FixedLocator, FormatStrFormatter, NullFormatter, NullLocator\nHOUSE = {\n    \"font.size\": 16, \"axes.titlesize\": 17, \"axes.labelsize\": 16,\n    \"xtick.labelsize\": 13, \"ytick.labelsize\": 13, \"legend.fontsize\": 13, \"figure.titlesize\": 18,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"lines.linewidth\": 2.2, \"lines.markersize\": 7,\n}\n\n\ndef start(fig, size):\n    \"\"\"Throw away the default rendering and start a clean figure in the house style.\"\"\"\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(*size)\n\n# (method, cluster size) -> label, colour, marker\nLINES = [((\"global\", 1), \"global atomics\", \"#d62728\", \"s\"),\n         ((\"private\", 1), \"private copy per block\", \"#2ca02c\", \"s\"),\n         ((\"dsmem\", 2), \"DSMEM, cluster of 2\", \"#9ecae1\", \"o\"),\n         ((\"dsmem\", 4), \"DSMEM, cluster of 4\", \"#6baed6\", \"o\"),\n         ((\"dsmem\", 8), \"DSMEM, cluster of 8\", \"#3182bd\", \"o\"),\n         ((\"dsmem\", 12), \"DSMEM, cluster of 12\", \"#08519c\", \"o\")]\n\n\ndef customize_matplotlib(fig, ax, config):\n    start(fig, (16, 6.5))\n    time_ax, ratio_ax = fig.subplots(1, 2)\n    sizes = sorted(df[\"hist_kib\"].unique())\n    glob = df[df[\"method\"] == \"global\"].set_index(\"hist_kib\")[\"ms\"]\n    for (method, cs), label, color, marker in LINES:\n        line = df[(df[\"method\"] == method) & (df[\"cluster_size\"] == cs)].sort_values(\"hist_kib\")\n        if line.empty:\n            continue\n        time_ax.plot(line[\"hist_kib\"], line[\"ms\"], color=color, marker=marker, label=label)\n        ratio_ax.plot(line[\"hist_kib\"], line[\"ms\"].values / glob.reindex(line[\"hist_kib\"]).values,\n                      color=color, marker=marker)\n    ratio_ax.axhline(1, color=\"0.5\", linestyle=\"--\", linewidth=1.6)   # as fast as global atomics\n    for axis in (time_ax, ratio_ax):\n        axis.set_xscale(\"log\", base=2)\n        axis.xaxis.set_major_locator(FixedLocator(sizes))\n        axis.xaxis.set_minor_locator(NullLocator())\n        axis.set_xticklabels([str(int(s)) for s in sizes])\n        axis.set_xlabel(\"histogram size (KiB)\")\n        axis.set_yscale(\"log\")\n        axis.yaxis.set_major_formatter(FormatStrFormatter(\"%g\"))\n        axis.yaxis.set_minor_formatter(NullFormatter())\n        axis.grid(True, alpha=0.3)\n    time_ax.yaxis.set_major_locator(FixedLocator([0.5, 1, 2, 5, 10, 20]))\n    time_ax.set_ylabel(\"time (ms, median of 11 runs)\")\n    time_ax.set_title(\"time to build the histogram\")\n    ratio_ax.yaxis.set_major_locator(FixedLocator([0.5, 1, 2, 5, 10]))\n    ratio_ax.set_ylabel(\"time / time with global atomics\")\n    ratio_ax.set_title(\"compared with global atomics\")\n    fig.legend(*time_ax.get_legend_handles_labels(), loc=\"outside upper center\", ncol=3, frameon=False)\n"
+      },
+      "grid": {
+        "rows": 1,
+        "cols": 1,
+        "activePanelIndex": 0,
+        "panels": [
+          {
+            "database": "data",
+            "sql": "SELECT method, cluster_size, hist_kib, ms\nFROM histogram_dsmem",
+            "plotType": "line",
+            "x": "hist_kib",
+            "y": [
+              "ms"
+            ],
+            "transformScript": "# One point per (method, cluster size, histogram size): the median of the runs.\ndf = df.groupby(['method', 'cluster_size', 'hist_kib'], as_index=False)['ms'].median()",
+            "layoutScript": "import matplotlib as mpl\nfrom matplotlib.ticker import FixedLocator, FormatStrFormatter, NullFormatter, NullLocator\nHOUSE = {\n    \"font.size\": 16, \"axes.titlesize\": 17, \"axes.labelsize\": 16,\n    \"xtick.labelsize\": 13, \"ytick.labelsize\": 13, \"legend.fontsize\": 13, \"figure.titlesize\": 18,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"lines.linewidth\": 2.2, \"lines.markersize\": 7,\n}\n\n\ndef start(fig, size):\n    \"\"\"Throw away the default rendering and start a clean figure in the house style.\"\"\"\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(*size)\n\n# (method, cluster size) -> label, colour, marker\nLINES = [((\"global\", 1), \"global atomics\", \"#d62728\", \"s\"),\n         ((\"private\", 1), \"private copy per block\", \"#2ca02c\", \"s\"),\n         ((\"dsmem\", 2), \"DSMEM, cluster of 2\", \"#9ecae1\", \"o\"),\n         ((\"dsmem\", 4), \"DSMEM, cluster of 4\", \"#6baed6\", \"o\"),\n         ((\"dsmem\", 8), \"DSMEM, cluster of 8\", \"#3182bd\", \"o\"),\n         ((\"dsmem\", 12), \"DSMEM, cluster of 12\", \"#08519c\", \"o\")]\n\n\ndef customize_matplotlib(fig, ax, config):\n    start(fig, (16, 6.5))\n    time_ax, ratio_ax = fig.subplots(1, 2)\n    sizes = sorted(df[\"hist_kib\"].unique())\n    glob = df[df[\"method\"] == \"global\"].set_index(\"hist_kib\")[\"ms\"]\n    for (method, cs), label, color, marker in LINES:\n        line = df[(df[\"method\"] == method) & (df[\"cluster_size\"] == cs)].sort_values(\"hist_kib\")\n        if line.empty:\n            continue\n        time_ax.plot(line[\"hist_kib\"], line[\"ms\"], color=color, marker=marker, label=label)\n        ratio_ax.plot(line[\"hist_kib\"], line[\"ms\"].values / glob.reindex(line[\"hist_kib\"]).values,\n                      color=color, marker=marker)\n    ratio_ax.axhline(1, color=\"0.5\", linestyle=\"--\", linewidth=1.6)   # as fast as global atomics\n    for axis in (time_ax, ratio_ax):\n        axis.set_xscale(\"log\", base=2)\n        axis.xaxis.set_major_locator(FixedLocator(sizes))\n        axis.xaxis.set_minor_locator(NullLocator())\n        axis.set_xticklabels([str(int(s)) for s in sizes])\n        axis.set_xlabel(\"histogram size (KiB)\")\n        axis.set_yscale(\"log\")\n        axis.yaxis.set_major_formatter(FormatStrFormatter(\"%g\"))\n        axis.yaxis.set_minor_formatter(NullFormatter())\n        axis.grid(True, alpha=0.3)\n    time_ax.yaxis.set_major_locator(FixedLocator([0.5, 1, 2, 5, 10, 20]))\n    time_ax.set_ylabel(\"time (ms, median of 11 runs)\")\n    time_ax.set_title(\"time to build the histogram\")\n    ratio_ax.yaxis.set_major_locator(FixedLocator([0.5, 1, 2, 5, 10]))\n    ratio_ax.set_ylabel(\"time / time with global atomics\")\n    ratio_ax.set_title(\"compared with global atomics\")\n    fig.legend(*time_ax.get_legend_handles_labels(), loc=\"outside upper center\", ncol=3, frameon=False)\n"
+          }
+        ]
+      }
+    },
+    {
+      "version": 3,
+      "label": "cluster residency: blocks alive at once",
+      "mode": "grid",
+      "rendererBackend": "matplotlib",
+      "single": {
+        "database": "data",
+        "sql": "SELECT block_size, smem_bytes, cluster_size, grid, api_blocks, measured_blocks, max_blocks_per_sm\nFROM cluster_residency",
+        "plotType": "line",
+        "x": "cluster_size",
+        "y": [
+          "measured_blocks"
+        ],
+        "transformScript": "# Nothing to do: one row per case.\n",
+        "layoutScript": "import matplotlib as mpl\nfrom matplotlib.ticker import FixedLocator, FormatStrFormatter, NullFormatter, NullLocator\nHOUSE = {\n    \"font.size\": 16, \"axes.titlesize\": 17, \"axes.labelsize\": 16,\n    \"xtick.labelsize\": 13, \"ytick.labelsize\": 13, \"legend.fontsize\": 13, \"figure.titlesize\": 18,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"lines.linewidth\": 2.2, \"lines.markersize\": 7,\n}\n\n\ndef start(fig, size):\n    \"\"\"Throw away the default rendering and start a clean figure in the house style.\"\"\"\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(*size)\n\nimport numpy as np\n\nCOLORS = {1: \"#7f7f7f\", 2: \"#9ecae1\", 4: \"#6baed6\", 8: \"#3182bd\", 12: \"#08519c\"}\n\n\ndef bars(axis, part, key, label_of):\n    \"\"\"Grouped bars: one group per value of `key`, one bar per cluster size;\n    the bar is the measured number of blocks alive at once, the black dot what\n    the occupancy API predicted, the label above the most blocks on one SM.\"\"\"\n    groups = sorted(part[key].unique())\n    sizes = sorted(part[\"cluster_size\"].unique())\n    width = 0.8 / len(sizes)\n    for i, cs in enumerate(sizes):\n        d = part[part[\"cluster_size\"] == cs].set_index(key).reindex(groups)\n        x = np.arange(len(groups)) + (i - (len(sizes) - 1) / 2) * width\n        axis.bar(x, d[\"measured_blocks\"], width * 0.92, color=COLORS.get(cs, \"0.3\"),\n                 label=\"no cluster\" if cs == 1 else f\"cluster of {cs}\")\n        axis.plot(x, d[\"api_blocks\"], \"o\", color=\"black\", markersize=5,\n                  label=\"occupancy API\" if i == 0 else None)\n        for xi, m, s in zip(x, d[\"measured_blocks\"], d[\"max_blocks_per_sm\"]):\n            axis.annotate(f\"{m:.0f}\\n({s:.0f}/SM)\", (xi, m), xytext=(0, 3), textcoords=\"offset points\",\n                          ha=\"center\", va=\"bottom\", fontsize=9, color=\"0.25\")\n    axis.set_xticks(range(len(groups)))\n    axis.set_xticklabels([label_of(g) for g in groups])\n    axis.set_yscale(\"log\")\n    axis.yaxis.set_major_locator(FixedLocator([10, 30, 100, 300, 1000]))\n    axis.yaxis.set_major_formatter(FormatStrFormatter(\"%d\"))\n    axis.yaxis.set_minor_formatter(NullFormatter())\n    axis.grid(True, axis=\"y\", alpha=0.3)\n    axis.legend(frameon=False, fontsize=11, loc=\"upper right\")\n\n\ndef customize_matplotlib(fig, ax, config):\n    start(fig, (18, 6.5))\n    by_block, by_smem = fig.subplots(1, 2, sharey=True)\n    bars(by_block, df[df[\"smem_bytes\"] == 0], \"block_size\", lambda b: f\"{b} threads\")\n    by_block.set_title(\"block size (no shared memory)\")\n    by_block.set_ylabel(\"blocks alive at the same time (GPU)\")\n    bars(by_smem, df[df[\"smem_bytes\"] > 0], \"smem_bytes\", lambda s: f\"{s // 1024} KiB\")\n    by_smem.set_title(\"shared memory per block (128 threads)\")\n    by_block.set_ylim(10, df[\"measured_blocks\"].max() * 3)   # one range for both panels\n    fig.suptitle(f\"How many blocks run at once ({df['grid'].iloc[0]} launched)\")\n"
+      },
+      "grid": {
+        "rows": 1,
+        "cols": 1,
+        "activePanelIndex": 0,
+        "panels": [
+          {
+            "database": "data",
+            "sql": "SELECT block_size, smem_bytes, cluster_size, grid, api_blocks, measured_blocks, max_blocks_per_sm\nFROM cluster_residency",
+            "plotType": "line",
+            "x": "cluster_size",
+            "y": [
+              "measured_blocks"
+            ],
+            "transformScript": "# Nothing to do: one row per case.\n",
+            "layoutScript": "import matplotlib as mpl\nfrom matplotlib.ticker import FixedLocator, FormatStrFormatter, NullFormatter, NullLocator\nHOUSE = {\n    \"font.size\": 16, \"axes.titlesize\": 17, \"axes.labelsize\": 16,\n    \"xtick.labelsize\": 13, \"ytick.labelsize\": 13, \"legend.fontsize\": 13, \"figure.titlesize\": 18,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"lines.linewidth\": 2.2, \"lines.markersize\": 7,\n}\n\n\ndef start(fig, size):\n    \"\"\"Throw away the default rendering and start a clean figure in the house style.\"\"\"\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(*size)\n\nimport numpy as np\n\nCOLORS = {1: \"#7f7f7f\", 2: \"#9ecae1\", 4: \"#6baed6\", 8: \"#3182bd\", 12: \"#08519c\"}\n\n\ndef bars(axis, part, key, label_of):\n    \"\"\"Grouped bars: one group per value of `key`, one bar per cluster size;\n    the bar is the measured number of blocks alive at once, the black dot what\n    the occupancy API predicted, the label above the most blocks on one SM.\"\"\"\n    groups = sorted(part[key].unique())\n    sizes = sorted(part[\"cluster_size\"].unique())\n    width = 0.8 / len(sizes)\n    for i, cs in enumerate(sizes):\n        d = part[part[\"cluster_size\"] == cs].set_index(key).reindex(groups)\n        x = np.arange(len(groups)) + (i - (len(sizes) - 1) / 2) * width\n        axis.bar(x, d[\"measured_blocks\"], width * 0.92, color=COLORS.get(cs, \"0.3\"),\n                 label=\"no cluster\" if cs == 1 else f\"cluster of {cs}\")\n        axis.plot(x, d[\"api_blocks\"], \"o\", color=\"black\", markersize=5,\n                  label=\"occupancy API\" if i == 0 else None)\n        for xi, m, s in zip(x, d[\"measured_blocks\"], d[\"max_blocks_per_sm\"]):\n            axis.annotate(f\"{m:.0f}\\n({s:.0f}/SM)\", (xi, m), xytext=(0, 3), textcoords=\"offset points\",\n                          ha=\"center\", va=\"bottom\", fontsize=9, color=\"0.25\")\n    axis.set_xticks(range(len(groups)))\n    axis.set_xticklabels([label_of(g) for g in groups])\n    axis.set_yscale(\"log\")\n    axis.yaxis.set_major_locator(FixedLocator([10, 30, 100, 300, 1000]))\n    axis.yaxis.set_major_formatter(FormatStrFormatter(\"%d\"))\n    axis.yaxis.set_minor_formatter(NullFormatter())\n    axis.grid(True, axis=\"y\", alpha=0.3)\n    axis.legend(frameon=False, fontsize=11, loc=\"upper right\")\n\n\ndef customize_matplotlib(fig, ax, config):\n    start(fig, (18, 6.5))\n    by_block, by_smem = fig.subplots(1, 2, sharey=True)\n    bars(by_block, df[df[\"smem_bytes\"] == 0], \"block_size\", lambda b: f\"{b} threads\")\n    by_block.set_title(\"block size (no shared memory)\")\n    by_block.set_ylabel(\"blocks alive at the same time (GPU)\")\n    bars(by_smem, df[df[\"smem_bytes\"] > 0], \"smem_bytes\", lambda s: f\"{s // 1024} KiB\")\n    by_smem.set_title(\"shared memory per block (128 threads)\")\n    by_block.set_ylim(10, df[\"measured_blocks\"].max() * 3)   # one range for both panels\n    fig.suptitle(f\"How many blocks run at once ({df['grid'].iloc[0]} launched)\")\n"
+          }
+        ]
+      }
+    },
+    {
+      "version": 3,
+      "label": "l2 topology: latency per GPC and TPC",
+      "mode": "grid",
+      "rendererBackend": "matplotlib",
+      "single": {
+        "database": "data",
+        "sql": "SELECT smid, gpc, tpc_pos, median\nFROM l2_topology",
+        "plotType": "line",
+        "x": "tpc_pos",
+        "y": [
+          "median"
+        ],
+        "transformScript": "# Nothing to do: one row per SM (median of its timed L2 loads).\n",
+        "layoutScript": "import matplotlib as mpl\nfrom matplotlib.ticker import FixedLocator, FormatStrFormatter, NullFormatter, NullLocator\nHOUSE = {\n    \"font.size\": 16, \"axes.titlesize\": 17, \"axes.labelsize\": 16,\n    \"xtick.labelsize\": 13, \"ytick.labelsize\": 13, \"legend.fontsize\": 13, \"figure.titlesize\": 18,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"lines.linewidth\": 2.2, \"lines.markersize\": 7,\n}\n\n\ndef start(fig, size):\n    \"\"\"Throw away the default rendering and start a clean figure in the house style.\"\"\"\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(*size)\n\nimport numpy as np\n\n\ndef heatmap(fig, axis, grid, title, cmap):\n    \"\"\"GPCs as rows, TPC positions as columns, the value written in every cell;\n    empty cells (a GPC with fewer TPCs) stay blank.\"\"\"\n    image = axis.imshow(np.ma.masked_invalid(grid.values), cmap=cmap, aspect=\"auto\")\n    for g in range(grid.shape[0]):\n        for p in range(grid.shape[1]):\n            v = grid.values[g, p]\n            if not np.isnan(v):\n                light = v < np.nanmin(grid.values) + 0.55 * (np.nanmax(grid.values) - np.nanmin(grid.values))\n                axis.text(p, g, f\"{v:.0f}\", ha=\"center\", va=\"center\", fontsize=14,\n                          color=\"white\" if light else \"black\")\n    axis.set_xticks(range(grid.shape[1]))\n    axis.set_xticklabels([f\"pos {p}\" for p in grid.columns])\n    axis.set_yticks(range(grid.shape[0]))\n    axis.set_yticklabels([f\"GPC {g}\" for g in grid.index])\n    axis.set_xlabel(\"TPC position inside the GPC\")\n    axis.set_title(title)\n    fig.colorbar(image, ax=axis, label=\"cycles\")\n\n\ndef customize_matplotlib(fig, ax, config):\n    start(fig, (17, 0.9 * df[\"gpc\"].nunique() + 3))\n    # one cell per TPC: the mean of its two SMs (they read the same)\n    grid = df.groupby([\"gpc\", \"tpc_pos\"])[\"median\"].mean().unstack(\"tpc_pos\")\n    left, right = fig.subplots(1, 2)\n    heatmap(fig, left, grid, \"L2 load latency (median)\", \"viridis\")\n    # minus each GPC's cheapest TPC: the distance of every TPC inside its GPC\n    heatmap(fig, right, grid.sub(grid.min(axis=1), axis=0), \"minus the GPC's minimum\", \"magma\")\n"
+      },
+      "grid": {
+        "rows": 1,
+        "cols": 1,
+        "activePanelIndex": 0,
+        "panels": [
+          {
+            "database": "data",
+            "sql": "SELECT smid, gpc, tpc_pos, median\nFROM l2_topology",
+            "plotType": "line",
+            "x": "tpc_pos",
+            "y": [
+              "median"
+            ],
+            "transformScript": "# Nothing to do: one row per SM (median of its timed L2 loads).\n",
+            "layoutScript": "import matplotlib as mpl\nfrom matplotlib.ticker import FixedLocator, FormatStrFormatter, NullFormatter, NullLocator\nHOUSE = {\n    \"font.size\": 16, \"axes.titlesize\": 17, \"axes.labelsize\": 16,\n    \"xtick.labelsize\": 13, \"ytick.labelsize\": 13, \"legend.fontsize\": 13, \"figure.titlesize\": 18,\n    \"axes.spines.right\": False, \"axes.spines.top\": False,\n    \"lines.linewidth\": 2.2, \"lines.markersize\": 7,\n}\n\n\ndef start(fig, size):\n    \"\"\"Throw away the default rendering and start a clean figure in the house style.\"\"\"\n    mpl.rcdefaults()\n    mpl.rcParams.update(HOUSE)\n    fig.clear()\n    fig.set_layout_engine(\"constrained\")\n    fig.set_size_inches(*size)\n\nimport numpy as np\n\n\ndef heatmap(fig, axis, grid, title, cmap):\n    \"\"\"GPCs as rows, TPC positions as columns, the value written in every cell;\n    empty cells (a GPC with fewer TPCs) stay blank.\"\"\"\n    image = axis.imshow(np.ma.masked_invalid(grid.values), cmap=cmap, aspect=\"auto\")\n    for g in range(grid.shape[0]):\n        for p in range(grid.shape[1]):\n            v = grid.values[g, p]\n            if not np.isnan(v):\n                light = v < np.nanmin(grid.values) + 0.55 * (np.nanmax(grid.values) - np.nanmin(grid.values))\n                axis.text(p, g, f\"{v:.0f}\", ha=\"center\", va=\"center\", fontsize=14,\n                          color=\"white\" if light else \"black\")\n    axis.set_xticks(range(grid.shape[1]))\n    axis.set_xticklabels([f\"pos {p}\" for p in grid.columns])\n    axis.set_yticks(range(grid.shape[0]))\n    axis.set_yticklabels([f\"GPC {g}\" for g in grid.index])\n    axis.set_xlabel(\"TPC position inside the GPC\")\n    axis.set_title(title)\n    fig.colorbar(image, ax=axis, label=\"cycles\")\n\n\ndef customize_matplotlib(fig, ax, config):\n    start(fig, (17, 0.9 * df[\"gpc\"].nunique() + 3))\n    # one cell per TPC: the mean of its two SMs (they read the same)\n    grid = df.groupby([\"gpc\", \"tpc_pos\"])[\"median\"].mean().unstack(\"tpc_pos\")\n    left, right = fig.subplots(1, 2)\n    heatmap(fig, left, grid, \"L2 load latency (median)\", \"viridis\")\n    # minus each GPC's cheapest TPC: the distance of every TPC inside its GPC\n    heatmap(fig, right, grid.sub(grid.min(axis=1), axis=0), \"minus the GPC's minimum\", \"magma\")\n"
+          }
+        ]
+      }
+    }
+  ],
+  "style": {
+    "dpi": 160
+  }
+}

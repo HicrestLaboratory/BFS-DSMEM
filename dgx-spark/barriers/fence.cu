@@ -15,7 +15,7 @@
 //                    including the shared-memory-only ones), on one cluster of
 //                    --cluster-size blocks of --block-size threads. One row per
 //                    piece: the median over the blocks.
-//   placement        48 blocks at once, in clusters of --cluster-size: one row
+//   placement        one block per SM, all at once, in clusters of --cluster-size: one row
 //                    per block with its SM. With --cluster-size 1 every block
 //                    measures alone, so the cost of each SM's own path is
 //                    visible.
@@ -45,7 +45,6 @@
 
 constexpr int ITERS = 1000;   // timed executions of a piece
 constexpr int WARM = 100;     // untimed executions before them
-constexpr int SMS = 48;       // GB10
 
 // What one block measured.
 struct Out {
@@ -194,8 +193,9 @@ int main(int argc, char** argv) {
     parse_args(argc - 1, argv + 1, &a, "fence",
                "  --cluster-size N  blocks per cluster, 1..12              (default 12)\n"
                "  --block-size N    threads per block, 32..1024            (default 32)\n");
+    const int sms = num_sms();
     Out* out;
-    CUDA_CHECK(cudaMallocManaged(&out, SMS * sizeof(Out)));
+    CUDA_CHECK(cudaMallocManaged(&out, sms * sizeof(Out)));
 
     const Named pieces[] = {
         {"cluster.sync()", (const void*)time_sync<full_sync>},
@@ -242,11 +242,11 @@ int main(int argc, char** argv) {
         printf("benchmark,piece,cluster_size,block_size,block,cluster,sm,cycles\n");
         for (int i : {0, 1, 4}) {   // cluster.sync(), relaxed, the GPU fence
             void* args[] = {&out};
-            if (!launch(pieces[i].kernel, SMS, a.block_size, a.cluster_size, args)) {
+            if (!launch(pieces[i].kernel, sms, a.block_size, a.cluster_size, args)) {
                 fprintf(stderr, "fence: clusters of %d cannot be scheduled\n", a.cluster_size);
                 return 1;
             }
-            for (int b = 0; b < SMS; b++)
+            for (int b = 0; b < sms; b++)
                 printf("fence,%s,%d,%d,%d,%d,%u,%lld\n", pieces[i].name, a.cluster_size, a.block_size, b,
                        b / a.cluster_size, out[b].sm, out[b].cycles);
         }

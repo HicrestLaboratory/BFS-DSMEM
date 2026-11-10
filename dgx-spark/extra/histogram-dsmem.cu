@@ -20,6 +20,9 @@
 // billion such requests per second for the whole chip, while L2 atomics run
 // at ~27 billion per second.
 //
+// OUTPUT: stdout = one CSV row per timed run (for SbatchMan: extra/experiments.yaml,
+// plots in extra/plots.json); stderr = the table of medians, for reading here.
+//
 // Build: make histogram-dsmem   (or: nvcc -O3 -arch=sm_121 histogram-dsmem.cu -o histogram-dsmem)
 // Run:   ./histogram-dsmem
 
@@ -98,11 +101,12 @@ void fill_input(int* d_input, int nbins) {
     CUDA_CHECK(cudaMemcpy(d_input, h.data(), ARRAY_SIZE * sizeof(int), cudaMemcpyHostToDevice));
 }
 
-// Runs `launch` (which must clear and fill d_bins) REPS times and returns the
-// median time in ms, or WRONG if the histogram is wrong: every element must be
-// counted exactly once, so the bins must add up to ARRAY_SIZE.
+// Runs `launch` (which must clear and fill d_bins) REPS times, prints one CSV row
+// per run and returns the median time in ms, or WRONG if the histogram is wrong:
+// every element must be counted exactly once, so the bins must add up to
+// ARRAY_SIZE. cluster_size is 1 for the versions without clusters.
 template <class Launch>
-double time_ms(Launch launch, int* d_bins, int nbins) {
+double time_ms(Launch launch, int* d_bins, int nbins, const char* method, int cluster_size) {
     launch();                                  // warm-up, and the correctness check
     CUDA_CHECK(cudaDeviceSynchronize());
     std::vector<int> h(nbins);
@@ -123,6 +127,8 @@ double time_ms(Launch launch, int* d_bins, int nbins) {
         float ms;
         CUDA_CHECK(cudaEventElapsedTime(&ms, start, stop));
         times.push_back(ms);
+        printf("histogram-dsmem,%s,%d,%d,%d,%d,%d,%d,%d,%.4f\n", method, cluster_size, nbins,
+               (int)(nbins * sizeof(int) / 1024), ARRAY_SIZE, GRID, BLOCK, r, ms);
     }
     CUDA_CHECK(cudaEventDestroy(start));
     CUDA_CHECK(cudaEventDestroy(stop));
@@ -133,9 +139,9 @@ double time_ms(Launch launch, int* d_bins, int nbins) {
 // One table cell: the time, '-' if the version cannot run, 'WRONG' if the
 // histogram was incorrect.
 void cell(double ms) {
-    if (ms == DOES_NOT_FIT) printf(" %8s", "-");
-    else if (ms == WRONG)   printf(" %8s", "WRONG");
-    else                    printf(" %8.3f", ms);
+    if (ms == DOES_NOT_FIT) fprintf(stderr, " %8s", "-");
+    else if (ms == WRONG)   fprintf(stderr, " %8s", "WRONG");
+    else                    fprintf(stderr, " %8.3f", ms);
 }
 
 int main() {
@@ -157,29 +163,30 @@ int main() {
     CUDA_CHECK(cudaFuncSetAttribute(hist_dsmem, cudaFuncAttributeMaxDynamicSharedMemorySize, max_smem));
     CUDA_CHECK(cudaFuncSetAttribute(hist_private, cudaFuncAttributeMaxDynamicSharedMemorySize, max_smem));
 
-    printf("%s: %d elements, %d blocks of %d threads. Time in ms, '-' = does not fit.\n\n",
-           prop.name, ARRAY_SIZE, GRID, BLOCK);
-    printf("%8s %6s | %8s %8s | %8s %8s %8s %8s\n", "bins", "KiB", "global", "private",
-           "DSMEM 2", "DSMEM 4", "DSMEM 8", "DSMEM 12");
+    printf("benchmark,method,cluster_size,bins,hist_kib,elements,grid,block_size,rep,ms\n");
+    fprintf(stderr, "%s: %d elements, %d blocks of %d threads. Time in ms, '-' = does not fit.\n\n",
+            prop.name, ARRAY_SIZE, GRID, BLOCK);
+    fprintf(stderr, "%8s %6s | %8s %8s | %8s %8s %8s %8s\n", "bins", "KiB", "global", "private",
+            "DSMEM 2", "DSMEM 4", "DSMEM 8", "DSMEM 12");
 
     for (int nbins : bin_counts) {
         fill_input(d_input, nbins);
         const size_t hist_bytes = nbins * sizeof(int);
-        printf("%8d %6d |", nbins, (int)(hist_bytes / 1024));
+        fprintf(stderr, "%8d %6d |", nbins, (int)(hist_bytes / 1024));
 
         // global atomics: no shared memory, always possible
         cell(time_ms([&] {
             CUDA_CHECK(cudaMemset(d_bins, 0, hist_bytes));
             hist_global<<<GRID, BLOCK>>>(d_bins, d_input, ARRAY_SIZE);
-        }, d_bins, nbins));
+        }, d_bins, nbins, "global", 1));
 
         // private copy: only if the whole histogram fits in one block
         if ((int)hist_bytes > max_smem) cell(DOES_NOT_FIT);
         else cell(time_ms([&] {
             CUDA_CHECK(cudaMemset(d_bins, 0, hist_bytes));
             hist_private<<<GRID, BLOCK, hist_bytes>>>(d_bins, d_input, ARRAY_SIZE, nbins);
-        }, d_bins, nbins));
-        printf(" |");
+        }, d_bins, nbins, "private", 1));
+        fprintf(stderr, " |");
 
         // DSMEM: only if one block's share of the bins fits in its shared memory
         for (int cluster_size : {2, 4, 8, 12}) {
@@ -202,9 +209,9 @@ int main() {
                 CUDA_CHECK(cudaMemset(d_bins, 0, hist_bytes));
                 CUDA_CHECK(cudaLaunchKernelEx(&cfg, hist_dsmem, d_bins, (const int*)d_input,
                                               ARRAY_SIZE, bins_per_block));
-            }, d_bins, nbins));
+            }, d_bins, nbins, "dsmem", cluster_size));
         }
-        printf("\n");
+        fprintf(stderr, "\n");
     }
 
     CUDA_CHECK(cudaFree(d_input));

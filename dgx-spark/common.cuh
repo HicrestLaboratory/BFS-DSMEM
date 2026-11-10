@@ -14,10 +14,9 @@
 #include <random>
 #include <vector>
 
-// The number of GPCs, TPCs per GPC, and SMs per TPC on the DGX Spark
-const int NUM_GPCs = 4;
-const int NUM_TPCs_PER_GPC = 6;
-const int NUM_SMs_PER_TPC = 2;
+// The largest cluster the benchmarks use: GB10's maximum, also legal on H100
+// (non-portable sizes go up to 16 there). The GPCs and the SM-to-GPC mapping
+// are measured at run time: see topology.cuh.
 const int MAX_ALLOWED_CLUSTERS = 12;
 
 #define CUDA_CHECK(call)                                                     \
@@ -29,6 +28,13 @@ const int MAX_ALLOWED_CLUSTERS = 12;
             exit(1);                                                         \
         }                                                                    \
     } while (0)
+
+// The number of SMs of the GPU (48 on GB10, 114 on H100 PCIe).
+inline int num_sms() {
+    int n = 0;
+    CUDA_CHECK(cudaDeviceGetAttribute(&n, cudaDevAttrMultiProcessorCount, 0));
+    return n;
+}
 
 // The SM this thread is executing on.
 __device__ __forceinline__ unsigned smid() {

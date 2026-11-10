@@ -37,7 +37,7 @@
 
 #include "../common.cuh"   // CUDA_CHECK, Args, print_header, print_stats_line, ...
 
-constexpr size_t BUFFER_WORDS = size_t(1) << 28;   // 1 GiB of 4-byte words; L2 is 24 MiB
+constexpr size_t BUFFER_WORDS = size_t(1) << 28;   // 1 GiB of 4-byte words; L2: 24 MiB on GB10, 50 MB on H100
 
 // A word of the buffer, different for every thread of every launch. Computed
 // before the first clock read, so it is not timed.

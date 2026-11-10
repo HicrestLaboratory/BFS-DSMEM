@@ -9,6 +9,7 @@
 #
 #   make ARCH=sm_90     another GPU;  make EXTRA=-lineinfo   extra nvcc flags
 #
+# On H100 build with `make ARCH=sm_90`.
 # sm_121 is mandatory on GB10: the default nvcc target silently lacks thread
 # block cluster support. cuda_micro_bench/ is a third-party clone with its
 # own multi-file build and is not handled here.

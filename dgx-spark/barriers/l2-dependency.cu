@@ -37,7 +37,6 @@ namespace cg = cooperative_groups;
 
 constexpr int ITERS = 1000;   // timed executions of a piece
 constexpr int WARM = 100;     // untimed executions before them
-constexpr int SMS = 48;       // GB10
 
 // What the two control loads need: a word that holds 0, so that each load can
 // use the value of the previous one as its address offset.
@@ -226,7 +225,7 @@ bool flood_rows(const Named* kernels, void** args, int cluster_size, Out* out) {
     for (int f = 0; f < 3; f++) {
         int stop = 0;
         CUDA_CHECK(cudaMemcpyToSymbol(stop_flag, &stop, sizeof stop));
-        const int blocks = (f == 0) ? cluster_size : SMS;
+        const int blocks = (f == 0) ? cluster_size : num_sms();
         if (!launch(kernels[f == 2].kernel, blocks, 256, cluster_size, args)) return false;
         std::vector<long long> v;
         for (int b = 0; b < cluster_size; b++) v.push_back(out[b].cycles);
@@ -241,7 +240,7 @@ int main(int argc, char** argv) {
     parse_args(argc, argv, &a, "l2-flooding",
                "  --cluster-size N  blocks of the measuring cluster, 2..12  (default 2)\n");
     Out* out;
-    CUDA_CHECK(cudaMallocManaged(&out, SMS * sizeof(Out)));
+    CUDA_CHECK(cudaMallocManaged(&out, num_sms() * sizeof(Out)));
 
     const size_t n = (8u << 20) / sizeof(uint4);   // 8 MiB: stays in L2
     uint4* buf;

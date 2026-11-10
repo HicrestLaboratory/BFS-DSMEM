@@ -49,7 +49,10 @@ jobs:
       cluster_size: [1, 12]
     command: "../../build/fence parts --cluster-size {cluster_size} --block-size {block_size}"
 
-  # 48 clusters of one block, one per SM, all at once: the cost of each SM's path.
+  # One cluster of one block per SM, all at once: the cost of each SM's path.
   - config: local
     tag: "fence_placement_cluster_size_1"
     command: "../../build/fence placement --cluster-size 1"
+
+  # The L2 latency of every SM, for the table "cost by TPC position, for each
+  # GPC" (tools/gpc_table.py), is the l2_topology job of ../extra/experiments.yaml.

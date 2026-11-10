@@ -14,6 +14,9 @@
 // cluster size and however small the blocks. The other blocks wait and run
 // in later "waves".
 //
+// OUTPUT: stdout = one CSV row per case (for SbatchMan: extra/experiments.yaml,
+// plots in extra/plots.json); stderr = the same as a table, for reading here.
+//
 // Build: make cluster_residency   (or: nvcc -O3 -arch=sm_121 cluster_residency.cu -o cluster_residency)
 // Run:   ./cluster_residency
 
@@ -121,7 +124,7 @@ void measured(int grid, int block_size, int smem, int cluster_size, int* max_gpu
 
 // A horizontal line of `width` dashes, to separate groups of rows.
 void separator(int width) {
-    printf("%s\n", std::string(width, '-').c_str());
+    fprintf(stderr, "%s\n", std::string(width, '-').c_str());
 }
 
 // One table row: prediction and measurement for one case.
@@ -131,8 +134,11 @@ void row(int grid, int block_size, int smem, int cluster_size, int num_sms) {
     char cluster[8];
     if (cluster_size == 1) snprintf(cluster, sizeof cluster, "none");
     else                   snprintf(cluster, sizeof cluster, "%d", cluster_size);
-    printf("%10d | %10d | %7s | %6d | %8d | %12d\n", block_size, smem, cluster,
-           predicted(block_size, smem, cluster_size, num_sms), max_gpu, max_sm);
+    const int api = predicted(block_size, smem, cluster_size, num_sms);
+    fprintf(stderr, "%10d | %10d | %7s | %6d | %8d | %12d\n", block_size, smem, cluster, api,
+            max_gpu, max_sm);
+    printf("cluster_residency,%d,%d,%d,%d,%d,%d,%d\n", block_size, smem, cluster_size, grid, api,
+           max_gpu, max_sm);
 }
 
 int main() {
@@ -151,12 +157,14 @@ int main() {
     CUDA_CHECK(cudaFuncSetAttribute((void*)record, cudaFuncAttributeMaxDynamicSharedMemorySize,
                                     (int)prop.sharedMemPerBlockOptin));
 
-    printf("%s: %d SMs, at most %d blocks per SM. Every case launches %d blocks.\n\n",
-           prop.name, num_sms, max_blocks_per_sm, grid);
-    // printf returns how many characters it printed: minus the newline, that
+    printf("benchmark,block_size,smem_bytes,cluster_size,grid,api_blocks,measured_blocks,"
+           "max_blocks_per_sm\n");
+    fprintf(stderr, "%s: %d SMs, at most %d blocks per SM. Every case launches %d blocks.\n\n",
+            prop.name, num_sms, max_blocks_per_sm, grid);
+    // fprintf returns how many characters it printed: minus the newline, that
     // is the width of the table, so the separator lines always match it.
-    const int width = printf("%10s | %10s | %7s | %6s | %8s | %12s\n", "block size",
-                             "smem bytes", "cluster", "API", "measured", "max block/SM") - 1;
+    const int width = fprintf(stderr, "%10s | %10s | %7s | %6s | %8s | %12s\n", "block size",
+                              "smem bytes", "cluster", "API", "measured", "max block/SM") - 1;
     separator(width);
 
     // 1. Block size: small blocks fit many per SM, unless they are clustered.

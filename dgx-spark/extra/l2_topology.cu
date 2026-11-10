@@ -35,15 +35,8 @@
 
 #include <vector>
 
-#include "../common.cuh"  // CUDA_CHECK, smid()
-
-// How SM ids map onto the layout (measured for GB10 by ../gpc.cu): the SMs of
-// a TPC are consecutive, and consecutive TPCs go round-robin over the GPCs.
-// So the TPC at position `pos` of GPC `gpc` is TPC pos * NUM_GPCs + TPC.
-__host__ __device__ inline int tpc_of(int sm)       { return sm / NUM_SMs_PER_TPC; }
-__host__ __device__ inline int gpc_of_tpc(int tpc)  { return tpc % NUM_GPCs; }
-__host__ __device__ inline int pos_of_tpc(int tpc)  { return tpc / NUM_GPCs; }
-__host__ __device__ inline int tpc_at(int gpc, int pos) { return pos * NUM_GPCs + gpc; }
+#include "../common.cuh"    // CUDA_CHECK, smid()
+#include "../topology.cuh"  // discover_topology(): the measured SM -> GPC mapping
 
 // One block per SM (the host requests >50% of an SM's shared memory), so
 // exactly one block sees smid() == target_sm. Times every load individually.
@@ -89,10 +82,20 @@ bool run(const unsigned* d, int nsm, int smemPerBlock, int steps, unsigned* lat,
 }
 
 // Header row: one column per TPC position inside a GPC.
-void position_header(const char* note) {
+void position_header(int positions, const char* note) {
     fprintf(stderr, "      ");
-    for (int p = 0; p < NUM_TPCs_PER_GPC; p++) fprintf(stderr, "   pos%-3d", p);
+    for (int p = 0; p < positions; p++) fprintf(stderr, "   pos%-3d", p);
     fprintf(stderr, "%s\n", note);
+}
+
+// The SMs of GPC g, TPC by TPC: tpcs[pos] = the SMs of the TPC at that position.
+std::vector<std::vector<int>> tpcs_of(const Topology& t, int g) {
+    std::vector<std::vector<int>> tpcs;
+    for (int sm : t.sms[g]) {
+        if ((int)tpcs.size() <= t.pos_of_sm[sm]) tpcs.resize(t.pos_of_sm[sm] + 1);
+        tpcs[t.pos_of_sm[sm]].push_back(sm);
+    }
+    return tpcs;
 }
 
 int main(int argc, char** argv) {
@@ -106,6 +109,9 @@ int main(int argc, char** argv) {
     CUDA_CHECK(cudaGetDeviceProperties(&prop, 0));
     size_t n = a.buffer_kib * 1024 / sizeof(unsigned);   // elements in the buffer
     int nsm = prop.multiProcessorCount;
+    const Topology topo = discover_topology();   // which GPC and TPC position every SM is in
+    int positions = 0;                           // the most TPCs in one GPC
+    for (int g = 0; g < topo.num_gpcs; g++) positions = std::max(positions, (int)tpcs_of(topo, g).size());
 
     std::mt19937 rng(a.seed);
     std::vector<unsigned> h(n);
@@ -157,21 +163,20 @@ int main(int argc, char** argv) {
         if (!run(d, nsm, smemPerBlock, steps, lat, ran_on, (unsigned)sm, shared_start, v)) continue;
         std::sort(v.begin(), v.end());
         med[sm] = v[steps / 2];
-        int tpc = tpc_of(sm);
-        printf("l2_topology,%d,%d,%d,%d,%zu,%d,%d,%u,%u,%u\n", sm, gpc_of_tpc(tpc), tpc,
-               pos_of_tpc(tpc),
+        printf("l2_topology,%d,%d,%d,%d,%zu,%d,%d,%u,%u,%u\n", sm, topo.gpc_of_sm[sm], sm / 2,
+               topo.pos_of_sm[sm],
                a.buffer_kib, steps, a.seed, v[steps / 4], v[steps / 2], v[3 * steps / 4]);
     }
 
     fprintf(stderr, "=== 1. median latency from every SM (cell = the SMs of the TPC) ===\n");
-    position_header("");
-    for (int g = 0; g < NUM_GPCs; g++) {
+    position_header(positions, "");
+    for (int g = 0; g < topo.num_gpcs; g++) {
         fprintf(stderr, "GPC %d ", g);
-        for (int p = 0; p < NUM_TPCs_PER_GPC; p++) {
-            int first_sm = tpc_at(g, p) * NUM_SMs_PER_TPC;
+        std::vector<std::vector<int>> tpcs = tpcs_of(topo, g);
+        for (const std::vector<int>& tpc : tpcs) {
             fprintf(stderr, " ");
-            for (int k = 0; k < NUM_SMs_PER_TPC; k++)
-                fprintf(stderr, k ? "/%-3u" : "%3u", med[first_sm + k]);
+            for (size_t k = 0; k < tpc.size(); k++)
+                fprintf(stderr, k ? "/%-3u" : "%3u", med[tpc[k]]);
             fprintf(stderr, " ");
         }
         fprintf(stderr, "\n");
@@ -182,14 +187,14 @@ int main(int argc, char** argv) {
     // The second leg is the same for every TPC in a GPC, so subtracting the
     // row minimum cancels it and leaves the per-TPC distances.
     fprintf(stderr, "\n=== 2. CROSS-CHECK: each row minus its own minimum = per-TPC distance ===\n");
-    position_header("   (TPC id = pos * NUM_GPCs + GPC)");
-    for (int g = 0; g < NUM_GPCs; g++) {
+    position_header(positions, "");
+    for (int g = 0; g < topo.num_gpcs; g++) {
         // the first SM of each TPC stands for the whole TPC
+        std::vector<std::vector<int>> tpcs = tpcs_of(topo, g);
         unsigned lo = 0xFFFFFFFFu;
-        for (int p = 0; p < NUM_TPCs_PER_GPC; p++) lo = std::min(lo, med[tpc_at(g, p) * NUM_SMs_PER_TPC]);
+        for (const std::vector<int>& tpc : tpcs) lo = std::min(lo, med[tpc[0]]);
         fprintf(stderr, "GPC %d ", g);
-        for (int p = 0; p < NUM_TPCs_PER_GPC; p++)
-            fprintf(stderr, " %7u ", med[tpc_at(g, p) * NUM_SMs_PER_TPC] - lo);
+        for (const std::vector<int>& tpc : tpcs) fprintf(stderr, " %7u ", med[tpc[0]] - lo);
         fprintf(stderr, "\n");
     }
     fprintf(stderr,
