@@ -32,4 +32,4 @@ slides/slides.vrb
 cuda_micro_bench/
 build/
 # built by parser.py from the jobs; rebuild it on each machine
-data.sqlite
+SbatchMan/data.sqlite
