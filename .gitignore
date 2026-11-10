@@ -31,3 +31,4 @@ slides/_minted
 slides/slides.vrb
 cuda_micro_bench/
 build/
+SbatchMan/data.sqlite
